@@ -3,12 +3,34 @@ from binance import Binance_public
 import numpy as np
 import mplfinance as mpf
 from multiprocessing import Process
+import datetime
+import time
+import pickle
 
 """
 идеи
 может сделать еще определение суб и майнор структруры внутри свинг структуры
 """
-class SPFinder:
+
+
+class UniOther:
+    @staticmethod
+    def create_dataframe(klines):
+        name_columns = ['Open_time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close_time', 'Asset_volume', 'n', 't_bb', 't_bq', 'ig']
+        df = pd.DataFrame(klines, columns=name_columns)
+        df = df[['Open_time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close_time']]
+        df['Open_time'] = pd.to_datetime(df['Open_time'], unit='ms')
+        df.set_index('Open_time', inplace=True)
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df[col] = df[col].astype(float)
+        # for col in ['Open_time', 'Close_time']:
+        #     df[col] = df[col].astype(int)
+        df['Close_time'] = df['Close_time'].astype(int)
+
+
+        return df
+
+class SPFinder(UniOther):
     """
     type_5_extremum:
     - n - normal
@@ -175,31 +197,103 @@ class SPFinder:
     def main_handler(self):
         return self.find_swings()
 
-
-class LiqMonitor:
+class ImbalanceKlineChecker(UniOther):
     """
-    Тут будем анализировать ликвидность + имбаланс
-    """
-    def __init__(self, df_klines, lst_result=[]):
-        self.df_klines = df_klines
-        self.lst_result = lst_result
 
-    def find_imbalance(self, threshold = 0.01):
+    """
+    WORK_INTERVAL = ["1m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"]
+    def __init__(self, symbol, analysis_period=500):
+        self.symbol = symbol
+        self.analysis_period = analysis_period
+        self.dict_resalt = self.load_history_date()
+
+
+
+    def load_history_date(self):
         """
-        max1 < min3 and max1 < max3 - бычий имбаланс
-        min1 > max3 and min1 > min3 - медвежий имбаланс
         """
-        if len(self.df_klines) != 3:
+        dict_resalt = {}
+        b_pub = Binance_public('der')
+        for temp_interval in self.WORK_INTERVAL:
+            lst_imbalance = []
+            klines = b_pub.get_kline(symbol_or_pair=self.symbol, interval=temp_interval, limit=self.analysis_period)
+            #Проверяем последнюю свечку, не закрыла
+            time_now = int(time.time()) if len(str(int(time.time()))) == 13 else int(time.time())*1000
+            if klines[-1][6] > time_now:
+                del klines[-1]
+            for i in range(1, len(klines) - 1):
+                temp_df = self.create_dataframe(klines[i - 1: i + 2])
+                w_kline = temp_df.iloc[1]
+                lst_imbalance = self.check_imbalance(w_kline, lst_imbalance, del_close_imbalance=True)
+                tuple_imbalance_klines = self.find_imbalance_klines(temp_df)
+                if tuple_imbalance_klines:
+                    lst_imbalance.append(tuple_imbalance_klines)
+            dict_resalt[temp_interval] = lst_imbalance
+
+        for el in dict_resalt['4h']:
+            print(f"{datetime.datetime.utcfromtimestamp(el[0]/1000).strftime('%Y-%m-%d %H:%M:%S')}", el)
+        return dict_resalt
+
+    @classmethod
+    def check_imbalance(cls, w_kline, lst_imbalance, del_close_imbalance=True):
+        for j in range(len(lst_imbalance)):
+            close_time, type_imbalance, imbalance_open, imbalance_close, overlapped_by_50 = lst_imbalance[j]
+            delta_imbalance = abs(imbalance_open - imbalance_close)
+            if type_imbalance == 'UpShift':
+                # Тут мы можем перекрыть минимумом
+                if w_kline['Low'] < imbalance_open + delta_imbalance * 0.1:
+                    lst_imbalance[j] = (close_time, type_imbalance, imbalance_open, imbalance_close, 'close')
+                elif w_kline['Low'] < imbalance_open + delta_imbalance * 0.55:
+                    lst_imbalance[j] = (close_time, type_imbalance, imbalance_open, imbalance_close, w_kline['Low'])
+            elif type_imbalance == 'DownShift':
+                # Тут мы можем перекрыть максимум
+                if w_kline['High'] > imbalance_open + delta_imbalance * 0.1:
+                    lst_imbalance[j] = (close_time, type_imbalance, imbalance_open, imbalance_close, 'close')
+                elif w_kline['High'] > imbalance_close + (delta_imbalance * 0.45):
+                    lst_imbalance[j] = (close_time, type_imbalance, imbalance_open, imbalance_close, w_kline['Low'])
+        if del_close_imbalance:
+            lst_imbalance = [_tup for _tup in lst_imbalance if _tup[4] != 'close']
+        return lst_imbalance
+
+    def find_imbalance_klines(self, df_klines, threshold = 0.1):
+        """
+        max1 < min3 and max1 < max3 - бычий имбаланс UpShift
+        min1 > max3 and min1 > min3 - медвежий имбаланс DownShift
+        return type_imbalance (close_time, imbalance_open, imbalance_close, overlapped_by_50)
+        """
+        if len(df_klines) != 3:
             raise ValueError("df_klines должен содержать только 3 строки")
-        OHLC_1 = self.df_klines.iloc[0]
-        OHLC_3 = self.df_klines.iloc[2]
+        OHLC_1, OHLC_2, OHLC_3 = df_klines.iloc[0], df_klines.iloc[1], df_klines.iloc[2]
+        max_delta = min([OHLC_1['High']-OHLC_1['Low'], OHLC_2['High']-OHLC_2['Low'], OHLC_3['High']-OHLC_3['Low']])
 
         if OHLC_1['High'] < OHLC_3['Low'] and OHLC_1['High'] < OHLC_3['High']:
-            print(f"бычий имбаланс {OHLC_3['Low'] - OHLC_1['High']}")
-            pass
+            # print(f"бычий имбаланс {OHLC_3['Low'] - OHLC_1['High']}")
+            if OHLC_3['Low'] - OHLC_1['High'] > max_delta * threshold:
+                return (OHLC_2['Close_time'], 'UpShift', OHLC_1['High'], OHLC_3['Low'], False)
         elif OHLC_1['Low'] > OHLC_3['High'] and OHLC_1['Low'] > OHLC_3['Low']:
-            print(f"медвежий имбаланс {OHLC_1['Low'] - OHLC_3['High']}")
-            pass
+            # print(f"медвежий имбаланс {OHLC_1['Low'] - OHLC_3['High']}")
+            if OHLC_1['Low'] - OHLC_3['High'] > max_delta * threshold:
+                return (OHLC_2['Close_time'], 'DownShift', OHLC_1['Low'], OHLC_3['High'], False)
+
+    def main(self, work_klines):
+        print('Начинает работать майн на вебсокетах, пока пасс и exit')
+        pass
+        exit()
+        temp_df = self.create_dataframe(work_klines)
+        w_kline = temp_df.iloc[1]
+        lst_imbalance = self.dict_resalt['timeframe']
+        lst_imbalance = self.check_imbalance(w_kline, lst_imbalance, del_close_imbalance=True)
+
+class LiqMonitorKlines:
+    """
+    - 1.0 Уровни открытия/закрытия прошлого дня/недели/месяца
+    - 2.1 EQL EQH
+    - 2.2 Компрессия
+    - 2.3 Отдельные максимумы и минимумы
+
+    Подумать деление на Внешняя и внутреннюю ликвидность (BSL SSL)
+
+    """
 
 
 
@@ -226,10 +320,16 @@ work_coin = 'ethusdt'
 work_interval = '1h'
 klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=work_interval, limit=100)
 df_all_klines = create_dataframe(klines)
+name_dir = rf"klines.bin"
+with open(name_dir, "wb") as file:
+    pickle.dump(df_all_klines, file)
+
+lst_result = []
 
 for i in range(2, len(klines) - 2):
     df_klines = create_dataframe(klines[i - 1: i + 2])
-    LiqMonitor(df_klines=df_klines).find_imbalance()
+    lst_result = SPFinder(df_klines, lst_result, i).main_handler()
+#     LiqMonitor(df_klines=df_klines).find_imbalance()
 pass
 
 
@@ -311,117 +411,117 @@ if __name__ == "__main__":
     # p2.join()
     # p3.join()
     # p4.join()
-
-# list_result = []
-# list_result_2 = []
-# for i in range(2, len(klines) - 2):
-#     work_klines = klines[i-1: i+2]
-#     list_result = SPFinder(klines=work_klines, lst_result=list_result, i_kline=i).main_handler()
 #
-# for i in range(2, len(klines) - 2):
-#     work_klines = klines[i-2: i+3]
-#     list_result_2 = SPFinder(klines=work_klines, lst_result=list_result_2, i_kline=i).main_handler()
+# # list_result = []
+# # list_result_2 = []
+# # for i in range(2, len(klines) - 2):
+# #     work_klines = klines[i-1: i+2]
+# #     list_result = SPFinder(klines=work_klines, lst_result=list_result, i_kline=i).main_handler()
+# #
+# # for i in range(2, len(klines) - 2):
+# #     work_klines = klines[i-2: i+3]
+# #     list_result_2 = SPFinder(klines=work_klines, lst_result=list_result_2, i_kline=i).main_handler()
+# #
+# # df = pd.DataFrame(klines, columns=['date', 'open', 'high', 'low', 'close', 'volume', '_c', '_v', '_t', '_b', '_q', '_g'])
+# # df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+# # df['unix_date'] = df['date'].astype(int) / 1000 if len(str(int(df.iloc[0]['date']))) == 13 else df['date'].astype(int)
+# # df['date'] = pd.to_datetime(df['date'], unit='ms')
+# # df.set_index('date', inplace=True)
+# # for col in ['open', 'high', 'low', 'close', 'volume']:
+# #     df[col] = df[col].astype(float)
+# # y_values_H_3 = [np.nan] * len(df)
+# # y_values_L_3 = [np.nan] * len(df)
+# # y_values_H_5 = [np.nan] * len(df)
+# # y_values_L_5 = [np.nan] * len(df)
+# #
+# # for el in list_result:
+# #     if el[0] in ['H', 'L']: continue
+# #     elif '_H' in el[0]:
+# #         y_values_H_3[el[3]] = float(el[2])
+# #     elif '_L' in el[0]:
+# #         y_values_L_3[el[3]] = float(el[2])
+# #
+# # for el in list_result_2:
+# #     if el[0] in ['H', 'L']: continue
+# #     elif '_H' in el[0]:
+# #         y_values_H_5[el[3]] = float(el[2])
+# #     elif '_L' in el[0]:
+# #         y_values_L_5[el[3]] = float(el[2])
+# # ap1 = mpf.make_addplot(y_values_H_3, scatter=True, markersize=15, marker='^', color='g')
+# # ap2 = mpf.make_addplot(y_values_L_3, scatter=True, markersize=15, marker='v', color='r')
+# # ap3 = mpf.make_addplot(y_values_H_5, scatter=True, markersize=15, marker='*', color='b')
+# # ap4 = mpf.make_addplot(y_values_L_5, scatter=True, markersize=15, marker='o', color='m')
+# # mpf.plot(df, type='candle', addplot=[ap1, ap2, ap3, ap4], title=work_interval)
 #
-# df = pd.DataFrame(klines, columns=['date', 'open', 'high', 'low', 'close', 'volume', '_c', '_v', '_t', '_b', '_q', '_g'])
-# df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
-# df['unix_date'] = df['date'].astype(int) / 1000 if len(str(int(df.iloc[0]['date']))) == 13 else df['date'].astype(int)
-# df['date'] = pd.to_datetime(df['date'], unit='ms')
-# df.set_index('date', inplace=True)
-# for col in ['open', 'high', 'low', 'close', 'volume']:
-#     df[col] = df[col].astype(float)
-# y_values_H_3 = [np.nan] * len(df)
-# y_values_L_3 = [np.nan] * len(df)
-# y_values_H_5 = [np.nan] * len(df)
-# y_values_L_5 = [np.nan] * len(df)
 #
-# for el in list_result:
-#     if el[0] in ['H', 'L']: continue
-#     elif '_H' in el[0]:
-#         y_values_H_3[el[3]] = float(el[2])
-#     elif '_L' in el[0]:
-#         y_values_L_3[el[3]] = float(el[2])
 #
-# for el in list_result_2:
-#     if el[0] in ['H', 'L']: continue
-#     elif '_H' in el[0]:
-#         y_values_H_5[el[3]] = float(el[2])
-#     elif '_L' in el[0]:
-#         y_values_L_5[el[3]] = float(el[2])
-# ap1 = mpf.make_addplot(y_values_H_3, scatter=True, markersize=15, marker='^', color='g')
-# ap2 = mpf.make_addplot(y_values_L_3, scatter=True, markersize=15, marker='v', color='r')
-# ap3 = mpf.make_addplot(y_values_H_5, scatter=True, markersize=15, marker='*', color='b')
-# ap4 = mpf.make_addplot(y_values_L_5, scatter=True, markersize=15, marker='o', color='m')
-# mpf.plot(df, type='candle', addplot=[ap1, ap2, ap3, ap4], title=work_interval)
-
-
-
-
-
-
-#По 4 точкам можно определить тренд HL-HH-HL-HH а лучше показывать числом сколько произошло после смены
-
-
-# dict_result = {}
 #
-# for work_interval in ["3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w","1M"]:
-#     for coint_k in range(500, 1550, 50):
-#         klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=work_interval, limit=coint_k)
-#         if len(klines) != coint_k:
-#             print('кол-во свечек урезано')
-#             pass
-#         df = pd.DataFrame(klines, columns=['date', 'open', 'high', 'low', 'close', 'volume', '_c', '_v', '_t', '_b', '_q', '_g'])
-#         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
-#         df['unix_date'] = df['date'].astype(int) / 1000 if len(str(int(df.iloc[0]['date']))) == 13 else df['date'].astype(int)
-#         df['unix_date'] = df['unix_date'].astype(int)
-#         df['date'] = pd.to_datetime(df['date'], unit='ms')
-#         df.set_index('date', inplace=True)
-#         for col in ['open', 'high', 'low', 'close', 'volume']:
-#             df[col] = df[col].astype(float)
-#         res_find_swings = find_swings(df)
 #
-#         t_res = ''.join([el[0].split('_')[1] for el in res_find_swings if '_' in el[0]])
-#         if 'LLLL' in t_res:
-#             pass
 #
-#         dict_result[coint_k] = ','.join([el[0] for el in res_find_swings[-10:]])
+# #По 4 точкам можно определить тренд HL-HH-HL-HH а лучше показывать числом сколько произошло после смены
 #
-#         print(f'{work_interval}: {coint_k}')
 #
-#     old_val = None
-#     for _coint, _val in dict_result.items():
-#         if old_val:
-#             if old_val != _val:
-#                 print('Не равны')
-#                 pass
-#             else:
-#                 print(f'{old_val} == {_val}')
-#             old_val = _val
-#         else:
-#             old_val = _val
-
-# print('OK')
+# # dict_result = {}
+# #
+# # for work_interval in ["3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w","1M"]:
+# #     for coint_k in range(500, 1550, 50):
+# #         klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=work_interval, limit=coint_k)
+# #         if len(klines) != coint_k:
+# #             print('кол-во свечек урезано')
+# #             pass
+# #         df = pd.DataFrame(klines, columns=['date', 'open', 'high', 'low', 'close', 'volume', '_c', '_v', '_t', '_b', '_q', '_g'])
+# #         df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+# #         df['unix_date'] = df['date'].astype(int) / 1000 if len(str(int(df.iloc[0]['date']))) == 13 else df['date'].astype(int)
+# #         df['unix_date'] = df['unix_date'].astype(int)
+# #         df['date'] = pd.to_datetime(df['date'], unit='ms')
+# #         df.set_index('date', inplace=True)
+# #         for col in ['open', 'high', 'low', 'close', 'volume']:
+# #             df[col] = df[col].astype(float)
+# #         res_find_swings = find_swings(df)
+# #
+# #         t_res = ''.join([el[0].split('_')[1] for el in res_find_swings if '_' in el[0]])
+# #         if 'LLLL' in t_res:
+# #             pass
+# #
+# #         dict_result[coint_k] = ','.join([el[0] for el in res_find_swings[-10:]])
+# #
+# #         print(f'{work_interval}: {coint_k}')
+# #
+# #     old_val = None
+# #     for _coint, _val in dict_result.items():
+# #         if old_val:
+# #             if old_val != _val:
+# #                 print('Не равны')
+# #                 pass
+# #             else:
+# #                 print(f'{old_val} == {_val}')
+# #             old_val = _val
+# #         else:
+# #             old_val = _val
 #
-# exit()
-
-def plot_graph1(w_inter="15m"):
-    klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=w_inter, limit=320)
-    df = pd.DataFrame(klines, columns=['date', 'open', 'high', 'low', 'close', 'volume', '_c', '_v', '_t', '_b', '_q', '_g'])
-    df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
-    # df['unix_date'] = df['date']
-    df['unix_date'] = df['date'].astype(int) / 1000 if len(str(int(df.iloc[0]['date']))) == 13 else df['date'].astype(int)
-    df['date'] = pd.to_datetime(df['date'], unit='ms')
-    df.set_index('date', inplace=True)
-    for col in ['open', 'high', 'low', 'close', 'volume']:
-        df[col] = df[col].astype(float)
-    y_values_H = [np.nan] * len(df)
-    y_values_L = [np.nan] * len(df)
-    # res_find_swings = find_swings(df)
-    for el in [1,2]:
-        if el[0] in ['H', 'L']: continue
-        elif '_H' in el[0]: y_values_H[el[1]] = float(el[2])
-        elif '_L' in el[0]: y_values_L[el[1]] = float(el[2])
-    ap1 = mpf.make_addplot(y_values_H, scatter=True, markersize=15, marker='^', color='g')
-    ap2 = mpf.make_addplot(y_values_L, scatter=True, markersize=15, marker='v', color='r')
-    mpf.plot(df, type='candle', addplot=[ap1, ap2], title=w_inter)
+# # print('OK')
+# #
+# # exit()
+#
+# def plot_graph1(w_inter="15m"):
+#     klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=w_inter, limit=320)
+#     df = pd.DataFrame(klines, columns=['date', 'open', 'high', 'low', 'close', 'volume', '_c', '_v', '_t', '_b', '_q', '_g'])
+#     df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+#     # df['unix_date'] = df['date']
+#     df['unix_date'] = df['date'].astype(int) / 1000 if len(str(int(df.iloc[0]['date']))) == 13 else df['date'].astype(int)
+#     df['date'] = pd.to_datetime(df['date'], unit='ms')
+#     df.set_index('date', inplace=True)
+#     for col in ['open', 'high', 'low', 'close', 'volume']:
+#         df[col] = df[col].astype(float)
+#     y_values_H = [np.nan] * len(df)
+#     y_values_L = [np.nan] * len(df)
+#     # res_find_swings = find_swings(df)
+#     for el in [1,2]:
+#         if el[0] in ['H', 'L']: continue
+#         elif '_H' in el[0]: y_values_H[el[1]] = float(el[2])
+#         elif '_L' in el[0]: y_values_L[el[1]] = float(el[2])
+#     ap1 = mpf.make_addplot(y_values_H, scatter=True, markersize=15, marker='^', color='g')
+#     ap2 = mpf.make_addplot(y_values_L, scatter=True, markersize=15, marker='v', color='r')
+#     mpf.plot(df, type='candle', addplot=[ap1, ap2], title=w_inter)
 
 
