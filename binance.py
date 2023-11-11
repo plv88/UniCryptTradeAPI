@@ -9,21 +9,6 @@ import time
 import websocket
 from .logger import Logger, EmptyResultException
 
-# class Logger:
-#     LOG_LEVELS = {
-#         'w': logging.WARNING,
-#         'i': logging.INFO
-#     }
-#     def __init__(self, logger_name, type_log):
-#         if type_log not in self.LOG_LEVELS:
-#             sys.exit(f"Invalid type_log provided: {type_log}. Valid options are: {', '.join(self.LOG_LEVELS.keys())}")
-#         self.logger = logging.getLogger(logger_name)
-#         self.logger.setLevel(self.LOG_LEVELS[type_log])
-#         handler = logging.FileHandler(f'{logger_name}.log')
-#         handler.setLevel(self.LOG_LEVELS[type_log])
-#         formatter = logging.Formatter('%(levelname)s %(name)s %(asctime)s %(message)s')
-#         handler.setFormatter(formatter)
-#         self.logger.addHandler(handler)
 
 
 
