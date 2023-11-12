@@ -1,13 +1,12 @@
 import requests
-import logging
 import sys
 from datetime import datetime
 import json
-import threading
 import traceback
 import time
 import websocket
-from .logger import Logger, EmptyResultException
+from my_lib.logger import Logger
+
 
 
 

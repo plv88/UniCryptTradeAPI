@@ -1,11 +1,10 @@
 import pandas as pd
-from binance import Binance_public
+from my_lib import Binance_public
 import numpy as np
 import mplfinance as mpf
 from multiprocessing import Process
 import datetime
 import time
-import pickle
 
 """
 идеи
@@ -319,10 +318,10 @@ b_pub = Binance_public('der')
 work_coin = 'ethusdt'
 work_interval = '1h'
 klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=work_interval, limit=100)
-df_all_klines = create_dataframe(klines)
-name_dir = rf"klines.bin"
-with open(name_dir, "wb") as file:
-    pickle.dump(df_all_klines, file)
+# df_all_klines = create_dataframe(klines)
+# name_dir = rf"klines.bin"
+# with open(name_dir, "wb") as file:
+#     pickle.dump(df_all_klines, file)
 
 lst_result = []
 
@@ -331,6 +330,20 @@ for i in range(2, len(klines) - 2):
     lst_result = SPFinder(df_klines, lst_result, i).main_handler()
 #     LiqMonitor(df_klines=df_klines).find_imbalance()
 pass
+
+
+
+# Пример использования
+# candles = [(time, open, close, high, low), ...]
+# structure_points = find_structure_points(candles)
+
+
+
+
+
+
+
+
 
 
 def plot_3point():
