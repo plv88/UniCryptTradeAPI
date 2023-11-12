@@ -5,7 +5,7 @@ import json
 import traceback
 import time
 import websocket
-from my_lib.logger import Logger
+from .logger import Logger
 
 
 
@@ -428,23 +428,29 @@ class Binance_public:
 
 
 class Binance_websocket_public:
-    __url = 'wss://fstream.binance.com'
-    __url_auth = 'wss://fstream-auth.binance.com'
-    __lg = Logger('Binance_websocket_public', type_log='w')
-    __logger = __lg.logger
+    __dict_urls = {
+        'spot': 'wss://stream.binance.com:443',
+        'der': 'wss://fstream.binance.com',
+        'der_auth': 'wss://fstream-auth.binance.com',
+        'spot_auth': 'wss://fstream-auth.binance.com'
+    }
 
-    def __init__(self, stream, queue, topics=None):
+    def __init__(self, trade_type, stream, queue, topics=None):
+        if trade_type not in self.__dict_urls:
+            raise ValueError(f"trade_type '{trade_type}' is not valid.")
+        self.__logger = Logger('Binance_websocket_public', type_log='w').logger
         self.queue = queue
         self.topics = topics
         self.stream = stream
         self.websocket_app = websocket.WebSocketApp(
-            url=self.__url+stream,
+            url=self.__dict_urls.get(trade_type)+stream,
             on_message=self.on_message,
             on_ping=self.on_ping,
             on_close=self.on_close,
             on_error=self.on_error,
             on_open=self.on_open,
         )
+
 
     def on_open(self, _wsapp):
         print("Connection opened")
