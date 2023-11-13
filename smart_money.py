@@ -1,5 +1,5 @@
 import pandas as pd
-from my_lib import Binance_public
+from .binance import Binance_public
 import numpy as np
 import mplfinance as mpf
 from multiprocessing import Process
@@ -293,6 +293,7 @@ class LiqMonitorKlines:
     Подумать деление на Внешняя и внутреннюю ликвидность (BSL SSL)
 
     """
+    pass
 
 
 
@@ -351,7 +352,7 @@ def plot_3point():
     for i in range(2, len(klines) - 2):
         df_klines = create_dataframe(klines[i - 1: i + 2])
         list_result = SPFinder(df_klines=df_klines, lst_result=list_result, i_kline=i).main_handler()
-    df = df_all_klines
+    df = ''
     y_values_H = [np.nan] * len(df)
     y_values_L = [np.nan] * len(df)
     for el in list_result:

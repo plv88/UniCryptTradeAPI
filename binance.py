@@ -5,34 +5,28 @@ import json
 import traceback
 import time
 import websocket
-from .logger import Logger
-
-
-
-
+from PlvLogger import Logger
+from queue import Queue
 
 
 class Binance_public:
-
-    __main_url_spot = r'https://api.binance.com'
-    __main_url_derv = r'https://fapi.binance.com'
+    _main_url_spot = r'https://api.binance.com'
+    _main_url_derv = r'https://fapi.binance.com'
 
     def __init__(self, market_type):
         self.market_type = market_type
-        self.__lg = Logger('Binance_public', type_log='w')
-        self.__logger = self.__lg.logger
+        self._logger = Logger('Binance_public', type_log='w').logger
 
 
     def __setattr__(self, key, value):
         if key == 'market_type' and value not in ['spot', 'der']:
-            self.__logger.error(f'Неизвестный тип рынка {self.market_type}')
+            self._logger.error(f'Неизвестный тип рынка {self.market_type}')
             raise TypeError(f"Неверный market_type {self.market_type}")
-            sys.exit()
         object.__setattr__(self, key, value)
 
 
-    def __request_template(self, end_point, par=None, method='get'):
-        work_link = self.__main_url_spot if self.market_type == 'spot' else self.__main_url_derv
+    def _request_template(self, end_point, par=None, method='get'):
+        work_link = self._main_url_spot if self.market_type == 'spot' else self._main_url_derv
         match method.lower():
             case 'get':
                 req = requests.get(work_link + end_point, params=par)
@@ -44,27 +38,27 @@ class Binance_public:
                 def_name = sys._getframe().f_code.co_name
                 mes_to_log = f'{def_name} Неизвестный метод {method}'
                 print(mes_to_log)
-                self.__logger.error(mes_to_log)
-                sys.exit()
-                return None
+                self._logger.error(mes_to_log)
+                raise TypeError(f"Неверный method {mes_to_log}")
         if req.ok:
             return req.json()
 
-    @classmethod
-    def check_startTime_endTime(cls, def_name, startTime, endTime):
-        startTime = int(startTime) if startTime else startTime
-        endTime = int(endTime) if endTime else endTime
-        for i, temp_time in enumerate([startTime, endTime]):
+    def check_startTime_endTime(self, def_name, start_time, end_time):
+        start_time = int(start_time) if start_time else start_time
+        end_time = int(end_time) if end_time else end_time
+        for i, temp_time in enumerate([start_time, end_time]):
             if temp_time:
                 if len(str(temp_time)) == 10:
                     temp_time = int(temp_time * 1000)
                 elif len(str(temp_time)) != 13:
-                    mes_to_log = f"{def_name} ошибка в {'startTime' if i == 0 else 'endTime'} {temp_time}"
-                    cls.__logger.error(mes_to_log)
-                    sys.exit()
-                if i == 0: startTime = temp_time
-                if i == 1: endTime = temp_time
-        return startTime, endTime
+                    mes_to_log = f"{def_name} ошибка в {'start_time' if i == 0 else 'end_time'} {temp_time}"
+                    self._logger.error(mes_to_log)
+                    raise TypeError(f"len(str(temp_time)) != 13 {mes_to_log}")
+                if i == 0:
+                    start_time = temp_time
+                if i == 1:
+                    end_time = temp_time
+        return start_time, end_time
 
     def get_exchange_information(self):
         """
@@ -72,7 +66,7 @@ class Binance_public:
         derv: https://binance-docs.github.io/apidocs/futures/en/#exchange-information
         """
         end_point = '/api/v3/exchangeInfo' if self.market_type == 'spot' else '/fapi/v1/exchangeInfo'
-        return self.__request_template(end_point=end_point, method='get')
+        return self._request_template(end_point=end_point, method='get')
 
 
 
@@ -84,14 +78,14 @@ class Binance_public:
         if self.market_type == 'der' and limit not in [5, 10, 20, 50, 100, 500, 1000]:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} Неверная глубина книги дериватив {limit}'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         end_point = '/api/v3/depth' if self.market_type == 'spot' else '/fapi/v1/depth'
         par = {
             'symbol': symbol.upper(),
             'limit': limit
         }
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_recent_trades_list(self, symbol, limit=500):
@@ -104,7 +98,7 @@ class Binance_public:
             'symbol': symbol.upper(),
             'limit': limit
         }
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_old_trade_lookup(self, symbol, fromId=None, limit=500):
@@ -118,7 +112,7 @@ class Binance_public:
             'limit': limit,
             'fromId': fromId
         }
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_aggregate_trades_list(self, symbol, fromId=None, startTime=None, endTime=None, limit=500):
@@ -135,7 +129,7 @@ class Binance_public:
             'endTime': endTime,
             'limit': limit
         }
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_kline(self, symbol_or_pair, interval, startTime=None, endTime=None, contractType='PERPETUAL', limit=500):
@@ -152,19 +146,20 @@ class Binance_public:
         if self.market_type.lower() not in lst_kline_type:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} Неизвестный kline_type {self.market_type}, lst_kline_type: {lst_kline_type}'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         if contractType.upper() not in lst_contract_type:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} Неизвестный contractType {contractType}, only {",".join(lst_contract_type)}'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         if limit < 0 and ((self.market_type != 'spot' and abs(limit) < 1500) or (self.market_type == 'spot' and abs(limit) < 1000)):
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не корректный limit {limit}'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         name_symbol_or_pair = 'symbol'
+        end_point = None
         match self.market_type.lower():
             case 'spot':
                 end_point = '/api/v3/klines'
@@ -183,8 +178,8 @@ class Binance_public:
         if interval not in lst_work_interval:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} Неизвестный интервал {interval}, work_interval: {lst_work_interval}'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         startTime, endTime = self.check_startTime_endTime(sys._getframe().f_code.co_name, startTime, endTime)
         par = {
             name_symbol_or_pair: symbol_or_pair.upper(),
@@ -195,7 +190,7 @@ class Binance_public:
         }
         if self.market_type.lower() == 'contract':
             par['contractType'] = contractType.upper()
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_current_average_price(self, symbol):
@@ -203,13 +198,13 @@ class Binance_public:
         if self.market_type != 'spot':
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} работает только со спотовым рынком'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         end_point = '/api/v3/avgPrice'
         par = {
             'symbol': symbol.upper(),
         }
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_mark_price_and_funding_rate(self, symbol=None):
@@ -218,7 +213,7 @@ class Binance_public:
         """
         end_point = '/fapi/v1/premiumIndex'
         par = {'symbol': symbol.upper()} if symbol else None
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_funding_rate_history(self, symbol=None, startTime = None, endTime = None, limit=100):
@@ -229,8 +224,8 @@ class Binance_public:
         if limit < 0 and abs(limit) < 1000:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не корректный limit {limit}'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         startTime, endTime = self.check_startTime_endTime(sys._getframe().f_code.co_name, startTime, endTime)
         par = {
             'symbol': symbol.upper() if symbol else symbol,
@@ -238,7 +233,7 @@ class Binance_public:
             'endTime': endTime,
             'limit': limit
         }
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
 
@@ -250,13 +245,13 @@ class Binance_public:
         if type_bin.lower() not in ['full', 'mini']:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не корректный type_bin {type_bin} only: [full, mini]'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         if symbol and ',' in symbol:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} если несклько символов то передавать листом [], а не строчкой через запятую'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         end_point = '/api/v3/ticker/24hr' if self.market_type == 'spot' else '/fapi/v1/ticker/24hr'
         par = {}
         if type(symbol) is list and self.market_type == 'spot':
@@ -265,7 +260,7 @@ class Binance_public:
             par['symbol'] = symbol.upper()
         if self.market_type == 'spot':
             par['type'] = type_bin.upper()
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_price_ticker(self, symbol=None):
@@ -282,9 +277,9 @@ class Binance_public:
         elif symbol:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не корректный symbol {symbol} для {self.market_type}'
-            self.__logger.warning(mes_to_log)
+            self._logger.warning(mes_to_log)
             return None
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_symbol_order_book_ticker(self, symbol):
@@ -301,45 +296,47 @@ class Binance_public:
         elif symbol:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не корректный symbol {symbol} для {self.market_type}'
-            self.__logger.warning(mes_to_log)
+            self._logger.warning(mes_to_log)
             return None
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_rolling_window_price_change_statistics(self, symbol_s, windowSize='1d', type_bin='MINI'):
         """https://binance-docs.github.io/apidocs/spot/en/#rolling-window-price-change-statistics"""
         end_point = '/api/v3/ticker'
-        if type(symbol_s) is list: w_symbol = '[' + str(','.join([f'"{el.upper()}"' for el in symbol_s])) + ']'
-        par = {'symbols': w_symbol} if type(symbol_s) is list else {'symbol': symbol_s.upper()}
+        if type(symbol_s) is list:
+            par = {'symbols': '[' + str(','.join([f'"{el.upper()}"' for el in symbol_s])) + ']'}
+        else:
+            par = {'symbol': symbol_s.upper()}
         par['type'] = type_bin.upper()
         if 'm' in windowSize.lower():
             temp_windowSize = int(windowSize.replace('m', ''))
             if 1 > temp_windowSize > 59:
                 def_name = sys._getframe().f_code.co_name
                 mes_to_log = f'{def_name} ошибка в windowSize {windowSize}, минуты от 1 до 59'
-                self.__logger.error(mes_to_log)
-                sys.exit()
+                self._logger.error(mes_to_log)
+                raise TypeError(mes_to_log)
         elif 'h' in windowSize.lower():
             temp_windowSize = int(windowSize.replace('h', ''))
             if 1 > temp_windowSize > 23:
                 def_name = sys._getframe().f_code.co_name
                 mes_to_log = f'{def_name} ошибка в windowSize {windowSize}, часы от 1 до 23'
-                self.__logger.error(mes_to_log)
-                sys.exit()
+                self._logger.error(mes_to_log)
+                raise TypeError(mes_to_log)
         elif 'd' in windowSize.lower():
             temp_windowSize = int(windowSize.replace('d', ''))
             if 1 > temp_windowSize > 7:
                 def_name = sys._getframe().f_code.co_name
                 mes_to_log = f'{def_name} ошибка в windowSize {windowSize}, дни от 1 до 7'
-                self.__logger.error(mes_to_log)
-                sys.exit()
+                self._logger.error(mes_to_log)
+                raise TypeError(mes_to_log)
         elif windowSize != None:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не понятный windowSize {windowSize}'
-            self.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         par['windowSize'] = windowSize
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
     def get_open_interest(self, symbol):
@@ -350,31 +347,30 @@ class Binance_public:
         par = {
             'symbol': symbol.upper()
         }
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
-    @classmethod
-    def get_default_def_5_end_point(cls, end_point, symbol, period, limit, startTime, endTime):
+    def get_default_def_5_end_point(self, end_point, symbol, period, limit, startTime, endTime):
         lst_period = ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"]
         if period not in lst_period:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не корректный период period: {period} - {",".join(lst_period)}'
-            cls.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         if 30 > limit > 500:
             def_name = sys._getframe().f_code.co_name
             mes_to_log = f'{def_name} не корректный limit: {limit},  only: 30 - 500'
-            cls.__logger.error(mes_to_log)
-            sys.exit()
+            self._logger.error(mes_to_log)
+            raise TypeError(mes_to_log)
         if startTime or endTime:
-            startTime, endTime = cls.check_startTime_endTime(sys._getframe().f_code.co_name, startTime, endTime)
+            startTime, endTime = self.check_startTime_endTime(sys._getframe().f_code.co_name, startTime, endTime)
             time_now = int(datetime.timestamp(datetime.utcnow())*1000)
             time_30_days = 30*24*60*60*1000
             if (time_now - startTime) > time_30_days:
                 def_name = sys._getframe().f_code.co_name
                 mes_to_log = f'{def_name} Only the data of the latest 30 days is available'
-                cls.__logger.error(mes_to_log)
-                sys.exit()
+                self._logger.error(mes_to_log)
+                raise TypeError(mes_to_log)
         par = {
             'symbol': symbol.upper(),
             'period': period,
@@ -382,7 +378,7 @@ class Binance_public:
             'endTime': endTime,
             'limit': limit
         }
-        return cls.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
     def get_open_interest_statistics(self, symbol, period, limit=30, startTime=None, endTime=None):
         """
         https://binance-docs.github.io/apidocs/futures/en/#open-interest-statistics
@@ -423,27 +419,27 @@ class Binance_public:
         par = {}
         if symbol:
             par['symbol'] = symbol.upper()
-        return self.__request_template(end_point=end_point, par=par, method='get')
+        return self._request_template(end_point=end_point, par=par, method='get')
 
 
 
 class Binance_websocket_public:
-    __dict_urls = {
-        'spot': 'wss://stream.binance.com:443',
+    _dict_urls = {
+        'spot': 'wss://stream.binance.com:9443',
         'der': 'wss://fstream.binance.com',
         'der_auth': 'wss://fstream-auth.binance.com',
-        'spot_auth': 'wss://fstream-auth.binance.com'
+        'spot_auth': ''
     }
 
     def __init__(self, trade_type, stream, queue, topics=None):
-        if trade_type not in self.__dict_urls:
+        if trade_type not in self._dict_urls:
             raise ValueError(f"trade_type '{trade_type}' is not valid.")
-        self.__logger = Logger('Binance_websocket_public', type_log='w').logger
+        self._logger = Logger('Binance_websocket_public', type_log='w').logger
         self.queue = queue
         self.topics = topics
         self.stream = stream
         self.websocket_app = websocket.WebSocketApp(
-            url=self.__dict_urls.get(trade_type)+stream,
+            url=self._dict_urls.get(trade_type)+stream,
             on_message=self.on_message,
             on_ping=self.on_ping,
             on_close=self.on_close,
@@ -469,9 +465,9 @@ class Binance_websocket_public:
     def on_error(self, _wsapp, error):
         def_name = sys._getframe().f_code.co_name
         mes_to_log = f'{def_name} Error: {error}, traceback: {traceback.format_exc()}'
-        self.__logger.error(mes_to_log)
+        self._logger.error(mes_to_log)
         print(mes_to_log)
-        sys.exit()
+        raise TypeError(mes_to_log)
     def on_ping(self, _wsapp, message):
         print(f"{str(datetime.now())} Got a ping! Ping msg is {message}")
 
@@ -481,9 +477,15 @@ class Binance_websocket_public:
 
     def on_message(self, _wsapp, message):
         parsed = json.loads(message)
+        print(len(parsed))
         self.queue.put(parsed)
 
 
+if __name__ == '__main__':
+    queue_price = Queue()
+    n_stream = r'/ws/!ticker_1h@arr'
+    stream_1 = Binance_websocket_public(trade_type='spot', stream=n_stream, queue=queue_price)
+    stream_1.websocket_app.run_forever()
 
 
 
