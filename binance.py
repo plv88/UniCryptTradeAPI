@@ -480,7 +480,7 @@ class Binance_websocket_public:
 
     def on_message(self, _wsapp, message):
         parsed = json.loads(message)
-        print(len(parsed))
+        # print(len(parsed))
         self.queue.put(parsed)
 
 
