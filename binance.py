@@ -447,6 +447,9 @@ class Binance_websocket_public:
             on_open=self.on_open,
         )
 
+    def __del__(self):
+        self.websocket_app.close()
+
 
     def on_open(self, _wsapp):
         print("Connection opened")
