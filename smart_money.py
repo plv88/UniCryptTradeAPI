@@ -1,10 +1,11 @@
 import pandas as pd
-from .binance import Binance_public
+from binance import Binance_public
 import numpy as np
 import mplfinance as mpf
 from multiprocessing import Process
-import datetime
+# import datetime
 import time
+from datetime import datetime
 
 """
 идеи
@@ -30,17 +31,8 @@ class UniOther:
         return df
 
 class SPFinder(UniOther):
-    """
-    type_5_extremum:
-    - n - normal
-    - m - modified
-    """
-
-    def __init__(self, df_klines, lst_result, i_kline=None, type_extremum_5='m'):
-        self.df = df_klines
-        self.lst_result = lst_result
-        self.i_kl = i_kline
-        self.type_extremum_5 = type_extremum_5
+    def __init__(self):
+        pass
 
     @classmethod
     def candles_match(cls, _prev, _curr, _next, type_k, _i, _klines):
@@ -64,137 +56,186 @@ class SPFinder(UniOther):
             else: _next += 1e-15
         return _prev, _curr, _next
 
-    def find_swings(self):
+    def find_swings(self, w_df, lst_result, type_extr_5='m', i_kl=None):
         """
         t_HH - temp
-        s_HH - strong если тестировали дискаунт или премиум маркете
+        s_HH - strong если тетировали дискаунт или премиум маркете
         w_HH - weak
         b_HH - boss точка на которой произошел слом структуры
         c_HH - confirm
         d_HH - double тут по хорошему смотреть более младший таймфрейм и смотреть что там было
         hh - все тоже самое но для внутренней структуры
+
+        type_5_extremum:
+        - n - normal
+        - m - modified
         """
 
         #Проверим тип свинга
-        if len(self.df) == 3:
-            prev_high, curr_high, next_high = self.df.iloc[0]['High'], self.df.iloc[1]['High'], self.df.iloc[2]['High']
-            prev_low, curr_low, next_low = self.df.iloc[0]['Low'], self.df.iloc[1]['Low'], self.df.iloc[2]['Low']
+        if len(w_df) == 3:
+            prev_high, curr_high, next_high = w_df.iloc[0]['High'], w_df.iloc[1]['High'], w_df.iloc[2]['High']
+            prev_low, curr_low, next_low = w_df.iloc[0]['Low'], w_df.iloc[1]['Low'], w_df.iloc[2]['Low']
             is_max = prev_high < curr_high > next_high
             is_min = prev_low > curr_low < next_low
 
-        elif len(self.df) == 5:
-            prev_high_1 = self.df.iloc[0]['High']
-            prev_high_0 = self.df.iloc[1]['High']
-            curr_high = self.df.iloc[2]['High']
-            next_high_0 = self.df.iloc[3]['High']
-            next_high_1 = self.df.iloc[4]['High']
+        elif len(w_df) == 5:
+            prev_high_1 = w_df.iloc[0]['High']
+            prev_high_0 = w_df.iloc[1]['High']
+            curr_high = w_df.iloc[2]['High']
+            next_high_0 = w_df.iloc[3]['High']
+            next_high_1 = w_df.iloc[4]['High']
 
-            prev_low_1 = self.df.iloc[0]['Low']
-            prev_low_0 = self.df.iloc[1]['Low']
-            curr_low = self.df.iloc[2]['Low']
-            next_low_0 = self.df.iloc[3]['Low']
-            next_low_1 = self.df.iloc[4]['Low']
+            prev_low_1 = w_df.iloc[0]['Low']
+            prev_low_0 = w_df.iloc[1]['Low']
+            curr_low = w_df.iloc[2]['Low']
+            next_low_0 = w_df.iloc[3]['Low']
+            next_low_1 = w_df.iloc[4]['Low']
 
-            if self.type_extremum_5 == 'n':
+            if type_extr_5 == 'n':
                 is_max = prev_high_1 <= prev_high_0 < curr_high > next_high_0 >= next_high_1
                 is_min = prev_low_1 >= prev_low_0 > curr_low < next_low_0 <= next_low_1
-            elif self.type_extremum_5 == 'm':
+            elif type_extr_5 == 'm':
                 is_max = prev_high_1 < curr_high and prev_high_0 < curr_high > next_high_0 and curr_high > next_high_1
                 is_min = prev_low_1 > curr_low and prev_low_0 > curr_low < next_low_0 and curr_low < next_low_1
             else:
-                print(f'Error self.type_extremum_5 {self.type_extremum_5}')
-                exit()
+                mes_to_log = f'Error type_extr_5 {type_extr_5}'
+                raise TypeError(mes_to_log)
 
         else:
-            print('Ошибка в длине len(self.df)')
-            exit()
+            mes_to_log = 'Ошибка в длине len(w_df)'
+            raise TypeError(mes_to_log)
 
         is_dual_extr = True if is_max and is_min else False
-        close_time = int(self.df.iloc[len(self.df)//2]['Close_time'])
+        close_time = int(w_df.iloc[len(w_df)//2]['Close_time'])
 
-        if len(self.lst_result) < 3:
+        if len(lst_result) < 3:
             # Если одновременно и максимум и минимум то пропускаем
-            if is_max and is_min and len(self.lst_result) == 0:
+            if is_max and is_min and len(lst_result) == 0:
                 print('Одновременно и максимум и минимум в самом начале работы')
                 return []
             # Работаем с максимум
             elif is_max:
-                if len(self.lst_result) == 0:
-                    self.lst_result.append(('H', close_time, curr_high, self.i_kl))
-                elif self.lst_result[-1][0] == 'H' and self.lst_result[-1][2] < curr_high:
-                    self.lst_result[-1] = ('H', close_time, curr_high, self.i_kl)
-                elif self.lst_result[-1][0] == 'L':
-                    if len(self.lst_result) == 2:
-                        if curr_high < self.lst_result[-2][2]:
-                            self.lst_result.append(('t_LH', close_time, curr_high, self.i_kl))
-                        elif curr_high > self.lst_result[-2][2]:
-                            self.lst_result.append(('t_HH', close_time, curr_high, self.i_kl))
+                if len(lst_result) == 0:
+                    lst_result.append(('H', close_time, curr_high, i_kl))
+                elif lst_result[-1][0] == 'H' and lst_result[-1][2] < curr_high:
+                    lst_result[-1] = ('H', close_time, curr_high, i_kl)
+                elif lst_result[-1][0] == 'L':
+                    if len(lst_result) == 2:
+                        if curr_high < lst_result[-2][2]:
+                            lst_result.append(('t_LH', close_time, curr_high, i_kl))
+                        elif curr_high > lst_result[-2][2]:
+                            lst_result.append(('t_HH', close_time, curr_high, i_kl))
                     else:
-                        self.lst_result.append(('H', close_time, curr_high, self.i_kl))
+                        lst_result.append(('H', close_time, curr_high, i_kl))
             # Работаем с минимум
             elif is_min:
-                if len(self.lst_result) == 0:
-                    self.lst_result.append(('L', close_time, curr_low, self.i_kl))
-                elif self.lst_result[-1][0] == 'H':
-                    if len(self.lst_result) == 2:
-                        if curr_low < self.lst_result[-2][2]:
-                            self.lst_result.append(('t_LL', close_time, curr_low, self.i_kl))
-                        elif curr_low > self.lst_result[-2][2]:
-                            self.lst_result.append(('t_HL', close_time, curr_low, self.i_kl))
+                if len(lst_result) == 0:
+                    lst_result.append(('L', close_time, curr_low, i_kl))
+                elif lst_result[-1][0] == 'H':
+                    if len(lst_result) == 2:
+                        if curr_low < lst_result[-2][2]:
+                            lst_result.append(('t_LL', close_time, curr_low, i_kl))
+                        elif curr_low > lst_result[-2][2]:
+                            lst_result.append(('t_HL', close_time, curr_low, i_kl))
                     else:
-                        self.lst_result.append(('L', close_time, curr_low, self.i_kl))
-                elif self.lst_result[-1][0] == 'L' and self.lst_result[-1][2] > curr_low:
-                    self.lst_result[-1] = ('L', close_time, curr_low, self.i_kl)
+                        lst_result.append(('L', close_time, curr_low, i_kl))
+                elif lst_result[-1][0] == 'L' and lst_result[-1][2] > curr_low:
+                    lst_result[-1] = ('L', close_time, curr_low, i_kl)
         else:
-            temp_swings = self.lst_result[-1][0].split('_')[1]
+            temp_swings = lst_result[-1][0].split('_')[1]
 
             if temp_swings == 'HH':
                 # Cвеча is_dual_extr: приоритет low
-                if is_min and self.lst_result[-2][2] > curr_low:
-                    self.lst_result.append(('db_LL' if is_dual_extr else 'b_LL', close_time, curr_low, self.i_kl))
+                if is_min and lst_result[-2][2] > curr_low:
+                    lst_result.append(('db_LL' if is_dual_extr else 'b_LL', close_time, curr_low, i_kl))
                 elif is_min:
-                    self.lst_result.append(('d_HL' if is_dual_extr else 't_HL', close_time, curr_low, self.i_kl))
-                elif is_max and self.lst_result[-1][2] < curr_high:
-                    self.lst_result[-1] = ('d_HH' if is_dual_extr else 't_HH', close_time, curr_high, self.i_kl)
+                    lst_result.append(('d_HL' if is_dual_extr else 't_HL', close_time, curr_low, i_kl))
+                elif is_max and lst_result[-1][2] < curr_high:
+                    lst_result[-1] = ('d_HH' if is_dual_extr else 't_HH', close_time, curr_high, i_kl)
 
             elif temp_swings == 'HL':
                 # Cвеча is_dual_extr: приоритет low
-                if is_min and self.lst_result[-3][2] > curr_low:
-                    self.lst_result[-1] = ('db_LL' if is_dual_extr else 'b_LL', close_time, curr_low, self.i_kl)
-                elif is_min and self.lst_result[-1][2] > curr_low:
-                    self.lst_result[-1] = ('d_HL' if is_dual_extr else 't_HL', close_time, curr_low, self.i_kl)
-                elif is_max and self.lst_result[-2][2] < curr_high:
-                    self.lst_result.append(('d_HH' if is_dual_extr else 't_HH', close_time, curr_high, self.i_kl))
+                if is_min and lst_result[-3][2] > curr_low:
+                    lst_result[-1] = ('db_LL' if is_dual_extr else 'b_LL', close_time, curr_low, i_kl)
+                elif is_min and lst_result[-1][2] > curr_low:
+                    lst_result[-1] = ('d_HL' if is_dual_extr else 't_HL', close_time, curr_low, i_kl)
+                elif is_max and lst_result[-2][2] < curr_high:
+                    lst_result.append(('d_HH' if is_dual_extr else 't_HH', close_time, curr_high, i_kl))
 
             elif temp_swings == 'LL':
                 # Cвеча is_dual_extr: приоритет high
-                if is_max and self.lst_result[-2][2] < curr_high:
-                    self.lst_result.append(('db_HH' if is_dual_extr else 'b_HH', close_time, curr_high, self.i_kl))
+                if is_max and lst_result[-2][2] < curr_high:
+                    lst_result.append(('db_HH' if is_dual_extr else 'b_HH', close_time, curr_high, i_kl))
                 elif is_max:
-                    self.lst_result.append(('d_LH' if is_dual_extr else 't_LH', close_time, curr_high, self.i_kl))
-                elif is_min and self.lst_result[-1][2] > curr_low:
-                    self.lst_result[-1] = ('d_LL' if is_dual_extr else 't_LL', close_time, curr_low, self.i_kl)
+                    lst_result.append(('d_LH' if is_dual_extr else 't_LH', close_time, curr_high, i_kl))
+                elif is_min and lst_result[-1][2] > curr_low:
+                    lst_result[-1] = ('d_LL' if is_dual_extr else 't_LL', close_time, curr_low, i_kl)
 
             elif temp_swings == 'LH':
                 # Cвеча is_dual_extr: приоритет high
-                if is_max and self.lst_result[-3][2] < curr_high:
-                    self.lst_result[-1] = ('db_HH' if is_dual_extr else 'b_HH', close_time, curr_high, self.i_kl)
-                elif is_max and self.lst_result[-1][2] < curr_high:
-                    self.lst_result[-1] = ('d_LH' if is_dual_extr else 't_LH', close_time, curr_high, self.i_kl)
-                elif is_min and self.lst_result[-2][2] > curr_low:
-                    self.lst_result.append(('d_LL' if is_dual_extr else 't_LL', close_time, curr_low, self.i_kl))
+                if is_max and lst_result[-3][2] < curr_high:
+                    lst_result[-1] = ('db_HH' if is_dual_extr else 'b_HH', close_time, curr_high, i_kl)
+                elif is_max and lst_result[-1][2] < curr_high:
+                    lst_result[-1] = ('d_LH' if is_dual_extr else 't_LH', close_time, curr_high, i_kl)
+                elif is_min and lst_result[-2][2] > curr_low:
+                    lst_result.append(('d_LL' if is_dual_extr else 't_LL', close_time, curr_low, i_kl))
 
             # Подумать как обрабатывать двойные экстремумы которые ломают структуру
-            if self.lst_result[-1][0].split('_') == 'db':
+            if lst_result[-1][0].split('_') == 'db':
                 print('слом структуры свечкой с двойным экстремумы', '-' * 50)
                 pass
 
-        return self.lst_result
+        return lst_result
+
+
+    def history_handler_binance(self, asset, time_frame, date_mes=None, n_klines=400):
+        list_result = []
+        if date_mes:
+            date_mes = int(datetime.strptime(date_mes, '%Y-%m-%d %H:%M:%S').timestamp()*1000)
+
+        klines = Binance_public('der').get_kline(symbol_or_pair=asset,
+                                                 interval=time_frame,
+                                                 endTime=date_mes,
+                                                 limit=n_klines)
+        if klines[-1][6] > int(time.time()) if len(str(int(time.time()))) == 13 else int(time.time()) * 1000:
+            del klines[-1]
+        for j in range(2, len(klines) - 2):
+            df_kline = self.create_dataframe(klines[j - 1: j + 2])
+            list_result = SPFinder().find_swings(df_kline, list_result, j)
+        return list_result
+
+    def calculate_pattern(self, _w_lst):
+        """
+        HL HH HL HH - 'uptrend'
+        LL LH LL LH 'downtrend'
+        OTHER 'consolidation'
+        """
+        temp_lst = [el[0].split('_')[1] for el in _w_lst if '_' in el[0]]
+        _w_trend = ' '.join(temp_lst[-4:])
+        match _w_trend:
+            case 'HH HL HH HL':
+                return 'uptrend'
+            case 'HL HH HL HH':
+                return 'uptrend'
+            case 'LH LL LH LL':
+                return 'downtrend'
+            case 'LL LH LL LH':
+                return 'downtrend'
+        return 'consolidation'
+
+
+    def identify_trend_pattern(self, asset, time_frame, date_mes, n_klines=400):
+        work_list = self.history_handler_binance(asset, time_frame, date_mes, n_klines)
+        trend_pattern = self.calculate_pattern(work_list)
+        return trend_pattern
 
 
 
-    def main_handler(self):
-        return self.find_swings()
+    # def main_handler(self, w_df, w_lst=[], i_kl=None):
+    #     w_lst = self.find_swings(w_df, w_lst, i_kl)
+    #     return w_lst
+
+
 
 class ImbalanceKlineChecker(UniOther):
     """
@@ -297,12 +338,6 @@ class LiqMonitorKlines:
 
 
 
-
-
-
-
-
-
 def create_dataframe(klines):
     name_columns = ['Open_time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close_time', 'Asset_volume', 'n', 't_bb', 't_bq', 'ig']
     df = pd.DataFrame(klines, columns=name_columns)
@@ -315,22 +350,37 @@ def create_dataframe(klines):
     return df
 
 
-b_pub = Binance_public('der')
-work_coin = 'ethusdt'
-work_interval = '1h'
-klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=work_interval, limit=100)
+# asset = 'ethusdt'
+# time_frame = '1h'
+# for el in ['02', '05', '07', '09', '13', '18']:
+#     date_mes = f'2023-02-{el} 12:00:00'
+#     trend_pattern = SPFinder().identify_trend_pattern(asset, time_frame, date_mes)
+#     print(trend_pattern)
+#
+# exit()
+#
+# test = SPFinder()
+# lst_result = test.history_handler_binance('ethusdt', '1h', '2023-02-15 12:00:00')
+# f_pat = test.identify_trend_pattern(lst_result)
+
+
+
+# b_pub = Binance_public('der')
+# work_coin = 'ethusdt'
+# work_interval = '1h'
+# klines = b_pub.get_kline(symbol_or_pair=work_coin, interval=work_interval, limit=100)
 # df_all_klines = create_dataframe(klines)
 # name_dir = rf"klines.bin"
 # with open(name_dir, "wb") as file:
 #     pickle.dump(df_all_klines, file)
 
-lst_result = []
-
-for i in range(2, len(klines) - 2):
-    df_klines = create_dataframe(klines[i - 1: i + 2])
-    lst_result = SPFinder(df_klines, lst_result, i).main_handler()
-#     LiqMonitor(df_klines=df_klines).find_imbalance()
-pass
+# _lst_result = []
+#
+# for i in range(2, len(klines) - 2):
+#     df_klines = create_dataframe(klines[i - 1: i + 2])
+#     _lst_result = SPFinder(df_klines, _lst_result, i).main_handler()
+# #     LiqMonitor(df_klines=df_klines).find_imbalance()
+# pass
 
 
 
@@ -347,21 +397,21 @@ pass
 
 
 
-def plot_3point():
-    list_result = []
-    for i in range(2, len(klines) - 2):
-        df_klines = create_dataframe(klines[i - 1: i + 2])
-        list_result = SPFinder(df_klines=df_klines, lst_result=list_result, i_kline=i).main_handler()
-    df = ''
-    y_values_H = [np.nan] * len(df)
-    y_values_L = [np.nan] * len(df)
-    for el in list_result:
-        if el[0] in ['H', 'L']:continue
-        elif '_H' in el[0]: y_values_H[el[3]] = float(el[2])
-        elif '_L' in el[0]: y_values_L[el[3]] = float(el[2])
-    ap1 = mpf.make_addplot(y_values_H, scatter=True, markersize=15, marker='^', color='g')
-    ap2 = mpf.make_addplot(y_values_L, scatter=True, markersize=15, marker='v', color='r')
-    mpf.plot(df, type='candle', addplot=[ap1, ap2], title=f'3points {work_interval}')
+# def plot_3point():
+#     list_result = []
+#     for i in range(2, len(klines) - 2):
+#         df_klines = create_dataframe(klines[i - 1: i + 2])
+#         list_result = SPFinder(df_klines=df_klines, lst_result=list_result, i_kline=i).main_handler()
+#     df = ''
+#     y_values_H = [np.nan] * len(df)
+#     y_values_L = [np.nan] * len(df)
+#     for el in list_result:
+#         if el[0] in ['H', 'L']:continue
+#         elif '_H' in el[0]: y_values_H[el[3]] = float(el[2])
+#         elif '_L' in el[0]: y_values_L[el[3]] = float(el[2])
+#     ap1 = mpf.make_addplot(y_values_H, scatter=True, markersize=15, marker='^', color='g')
+#     ap2 = mpf.make_addplot(y_values_L, scatter=True, markersize=15, marker='v', color='r')
+#     mpf.plot(df, type='candle', addplot=[ap1, ap2], title=f'3points {work_interval}')
 # def plot_5point_n():
 #     list_result = []
 #     for i in range(2, len(klines) - 2):
@@ -410,18 +460,18 @@ def plot_3point():
 #     ap2 = mpf.make_addplot(y_values_L, scatter=True, markersize=15, marker='v', color='r')
 #     mpf.plot(df, type='candle', addplot=[ap1, ap2], title=f'5points_m {work_interval}')
 
-if __name__ == "__main__":
-    p1 = Process(target=plot_3point)
+# if __name__ == "__main__":
+#     p1 = Process(target=plot_3point)
     # p2 = Process(target=plot_5point_m)
     # p3 = Process(target=plot_5point_n)
     # p4 = Process(target=plot_graph4)
 
-    p1.start()
+    # p1.start()
     # p2.start()
     # p3.start()
     # p4.start()
 
-    p1.join()
+    # p1.join()
     # p2.join()
     # p3.join()
     # p4.join()
