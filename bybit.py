@@ -20,9 +20,11 @@ class Bybit_public:
 
 
     def __setattr__(self, key, value):
-        if key == 'category' and value not in ['spot', 'linear', 'inverse', 'option']:
+        if key == 'category' and value not in ['spot', 'der', 'linear', 'inverse', 'option']:
             self._logger.error(f'Неизвестный тип рынка {self.category}')
             raise TypeError(f"Неверный category {self.category}")
+        if key == 'category' and value == 'der':
+            value = 'linear'
         object.__setattr__(self, key, value)
 
 
@@ -76,6 +78,7 @@ class Bybit_websocket_public:
     def __init__(self, trade_type, queue, topics):
         if trade_type not in self._dict_urls:
             raise ValueError(f"trade_type '{trade_type}' is not valid.")
+        self.trade_type = trade_type
         self._logger = Logger('Bybit_websocket_public', type_log='w').logger
         self.queue = queue
         self.topics = topics
@@ -121,6 +124,7 @@ class Bybit_websocket_public:
 
     def on_message(self, _wsapp, message):
         parsed = json.loads(message)
+        parsed['trade_type'] = self.trade_type
         # print(len(parsed), parsed)
         self.queue.put(parsed)
 
