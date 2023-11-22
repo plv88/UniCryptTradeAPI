@@ -7,6 +7,7 @@ import time
 import websocket
 from PlvLogger import Logger
 from queue import Queue
+import _thread
 
 
 class Binance_public:
@@ -482,15 +483,3 @@ class Binance_websocket_public:
         parsed = json.loads(message)
         # print(len(parsed))
         self.queue.put(parsed)
-
-
-if __name__ == '__main__':
-    queue_price = Queue()
-    n_stream = r'/ws/!ticker_1h@arr'
-    stream_1 = Binance_websocket_public(trade_type='spot', stream=n_stream, queue=queue_price)
-    stream_1.websocket_app.run_forever()
-
-
-
-
-

@@ -65,8 +65,6 @@ class Bybit_public:
         return None
 
 
-
-
 class Bybit_websocket_public:
     _dict_urls = {
         'spot': 'wss://stream.bybit.com/v5/public/spot',
@@ -128,15 +126,3 @@ class Bybit_websocket_public:
         # print(len(parsed), parsed)
         self.queue.put(parsed)
 
-
-
-
-if __name__ == '__main__':
-    bybit_der = Bybit_public(category='linear').get_symbols_in_trading()
-    bybit_spot = Bybit_public(category='spot').get_symbols_in_trading()
-    work_topik_der = [f'tickers.{el}' for el in bybit_der]
-    work_topik_spot = [f'tickers.{el}' for el in bybit_spot]
-    queue_price = Queue()
-    Bybit_websocket_public('der', queue_price, work_topik_der).websocket_app.run_forever()
-    Bybit_websocket_public('spot', queue_price, work_topik_spot).websocket_app.run_forever()
-    print('Hi')
