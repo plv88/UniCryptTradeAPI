@@ -6,8 +6,9 @@ import traceback
 import time
 import websocket
 from PlvLogger import Logger
-from queue import Queue
 import _thread
+
+from queue import Queue
 
 
 class Bybit_public:
