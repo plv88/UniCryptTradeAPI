@@ -44,21 +44,38 @@ class Binance_public:
         if req.ok:
             return req.json()
 
+    # def check_startTime_endTime(self, def_name, start_time, end_time):
+    #     start_time = int(start_time) if start_time else start_time
+    #     end_time = int(end_time) if end_time else end_time
+    #     for i, temp_time in enumerate([start_time, end_time]):
+    #         if temp_time:
+    #             if len(str(temp_time)) == 10:
+    #                 temp_time = int(temp_time * 1000)
+    #             elif len(str(temp_time)) != 13:
+    #                 mes_to_log = f"{def_name} ошибка в {'start_time' if i == 0 else 'end_time'} {temp_time}"
+    #                 self._logger.error(mes_to_log)
+    #                 raise TypeError(f"len(str(temp_time)) != 13 {mes_to_log}")
+    #             if i == 0:
+    #                 start_time = temp_time
+    #             if i == 1:
+    #                 end_time = temp_time
+    #     return start_time, end_time
+
     def check_startTime_endTime(self, def_name, start_time, end_time):
-        start_time = int(start_time) if start_time else start_time
-        end_time = int(end_time) if end_time else end_time
-        for i, temp_time in enumerate([start_time, end_time]):
-            if temp_time:
-                if len(str(temp_time)) == 10:
-                    temp_time = int(temp_time * 1000)
-                elif len(str(temp_time)) != 13:
-                    mes_to_log = f"{def_name} ошибка в {'start_time' if i == 0 else 'end_time'} {temp_time}"
+        def validate_time(time, time_name):
+            if time:
+                time = int(time)
+                if len(str(time)) == 10:
+                    time *= 1000
+                elif len(str(time)) != 13:
+                    mes_to_log = f"{def_name} ошибка в {time_name} {time}"
                     self._logger.error(mes_to_log)
-                    raise TypeError(f"len(str(temp_time)) != 13 {mes_to_log}")
-                if i == 0:
-                    start_time = temp_time
-                if i == 1:
-                    end_time = temp_time
+                    raise TypeError(f"len(str(time)) != 13 {mes_to_log}")
+            return time
+
+        start_time = validate_time(start_time, "start_time")
+        end_time = validate_time(end_time, "end_time")
+
         return start_time, end_time
 
     def get_exchange_information(self):
