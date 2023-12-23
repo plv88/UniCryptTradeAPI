@@ -7,6 +7,7 @@ import time
 import websocket
 from PlvLogger import Logger
 import _thread
+import threading
 
 from queue import Queue
 
@@ -88,18 +89,28 @@ class Bybit_websocket_public:
             on_error=self.on_error,
             on_open=self.on_open,
         )
+        self._is_running = True
 
     def __del__(self):
         self.websocket_app.close()
 
     def send_heartbeat(self, _ws):
-        while True:
-            _ws.send(json.dumps({"req_id": "100001", "op": "ping"}))
-            time.sleep(20)
+        while self._is_running:  # Проверьте, что соединение должно быть открыто
+            try:
+                if _ws.sock and _ws.sock.connected:  # Проверьте, что сокет существует и соединение открыто
+                    _ws.send(json.dumps({"req_id": "100001", "op": "ping"}))
+                else:
+                    print("WebSocket is not connected.")
+                    break  # Выход из цикла, если соединение закрыто
+                time.sleep(20)
+            except websocket.WebSocketConnectionClosedException:
+                print("WebSocket connection is closed, stopping heartbeat.")
+                break
 
     def on_open(self, _wsapp):
         print("Connection opened")
-        _thread.start_new_thread(self.send_heartbeat, (_wsapp,))
+        self.heartbeat_thread = threading.Thread(target=self.send_heartbeat, args=(_wsapp,))
+        self.heartbeat_thread.start()
         data = {
             "op": "subscribe",
             "args": self.topics
@@ -118,12 +129,17 @@ class Bybit_websocket_public:
         raise TypeError(mes_to_log)
 
     def stop(self):
+        self._is_running = False  # Установите флаг в False, чтобы остановить пинг
         if self.websocket_app:
             self.websocket_app.close()
+        if hasattr(self, 'heartbeat_thread'):
+            self.heartbeat_thread.join()  # Дождитесь завершения потока пинга
 
     def on_message(self, _wsapp, message):
         parsed = json.loads(message)
         parsed['trade_type'] = self.trade_type
         # print(len(parsed), parsed)
         self.queue.put(parsed)
+
+
 
