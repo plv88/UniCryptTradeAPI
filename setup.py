@@ -6,7 +6,7 @@ with open('README.md', 'r', encoding='utf-8') as fh:
 
 setup(
     name='unitradeapi',
-    version='0.102',
+    version='0.103',
     packages=find_packages(),
     description='Binance, Bybit API',
     long_description=long_description,

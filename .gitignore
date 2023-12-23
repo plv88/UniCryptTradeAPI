@@ -4,6 +4,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+update_pypi.txt
+
 # C extensions
 *.so
 

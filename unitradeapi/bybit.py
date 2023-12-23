@@ -92,7 +92,7 @@ class Bybit_websocket_public:
         self._is_running = True
 
     def __del__(self):
-        self.websocket_app.close()
+        self.stop()
 
     def send_heartbeat(self, _ws):
         while self._is_running:  # Проверьте, что соединение должно быть открыто
@@ -138,8 +138,16 @@ class Bybit_websocket_public:
     def on_message(self, _wsapp, message):
         parsed = json.loads(message)
         parsed['trade_type'] = self.trade_type
-        # print(len(parsed), parsed)
+        print(len(parsed), parsed)
         self.queue.put(parsed)
 
 
 
+# if __name__ == '__main__':
+#     queue_price = Queue()
+#     bybit_der = Bybit_public(category='linear').get_symbols_in_trading()
+#     bybit_spot = Bybit_public(category='spot').get_symbols_in_trading()
+#     work_topik_der = [f'tickers.{el}' for el in bybit_der]
+#     work_topik_spot = [f'tickers.{el}' for el in bybit_spot][:10]
+#     # Bybit_websocket_public('der', queue_price, work_topik_der).websocket_app.run_forever()
+#     Bybit_websocket_public('spot', queue_price, work_topik_spot).websocket_app.run_forever()
