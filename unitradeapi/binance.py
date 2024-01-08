@@ -6,11 +6,11 @@ import traceback
 import time
 import websocket
 from PlvLogger import Logger
-from queue import Queue
-import _thread
+# from queue import Queue
+# import _thread
 
 
-class Binance_public:
+class BinancePublic:
     _main_url_spot = r'https://api.binance.com'
     _main_url_derv = r'https://fapi.binance.com'
 
@@ -18,13 +18,11 @@ class Binance_public:
         self.market_type = market_type
         self._logger = Logger('Binance_public', type_log='w').logger
 
-
     def __setattr__(self, key, value):
         if key == 'market_type' and value not in ['spot', 'der']:
             self._logger.error(f'Неизвестный тип рынка {self.market_type}')
             raise TypeError(f"Неверный market_type {self.market_type}")
         object.__setattr__(self, key, value)
-
 
     def _request_template(self, end_point, par=None, method='get'):
         work_link = self._main_url_spot if self.market_type == 'spot' else self._main_url_derv
@@ -44,24 +42,7 @@ class Binance_public:
         if req.ok:
             return req.json()
 
-    # def check_startTime_endTime(self, def_name, start_time, end_time):
-    #     start_time = int(start_time) if start_time else start_time
-    #     end_time = int(end_time) if end_time else end_time
-    #     for i, temp_time in enumerate([start_time, end_time]):
-    #         if temp_time:
-    #             if len(str(temp_time)) == 10:
-    #                 temp_time = int(temp_time * 1000)
-    #             elif len(str(temp_time)) != 13:
-    #                 mes_to_log = f"{def_name} ошибка в {'start_time' if i == 0 else 'end_time'} {temp_time}"
-    #                 self._logger.error(mes_to_log)
-    #                 raise TypeError(f"len(str(temp_time)) != 13 {mes_to_log}")
-    #             if i == 0:
-    #                 start_time = temp_time
-    #             if i == 1:
-    #                 end_time = temp_time
-    #     return start_time, end_time
-
-    def check_startTime_endTime(self, def_name, start_time, end_time):
+    def check_start_time_end_time(self, def_name, start_time, end_time):
         def validate_time(time, time_name):
             if time:
                 time = int(time)
@@ -86,8 +67,6 @@ class Binance_public:
         end_point = '/api/v3/exchangeInfo' if self.market_type == 'spot' else '/fapi/v1/exchangeInfo'
         return self._request_template(end_point=end_point, method='get')
 
-
-
     def get_order_book(self, symbol, limit=100):
         """
         spot: https://binance-docs.github.io/apidocs/spot/en/#order-book
@@ -105,7 +84,6 @@ class Binance_public:
         }
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
     def get_recent_trades_list(self, symbol, limit=500):
         """
         spot: https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
@@ -118,8 +96,7 @@ class Binance_public:
         }
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
-    def get_old_trade_lookup(self, symbol, fromId=None, limit=500):
+    def get_old_trade_lookup(self, symbol, from_id=None, limit=500):
         """
         spot: https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
         derv: https://binance-docs.github.io/apidocs/futures/en/#old-trades-lookup-market_data
@@ -128,12 +105,11 @@ class Binance_public:
         par = {
             'symbol': symbol.upper(),
             'limit': limit,
-            'fromId': fromId
+            'fromId': from_id
         }
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
-    def get_aggregate_trades_list(self, symbol, fromId=None, startTime=None, endTime=None, limit=500):
+    def get_aggregate_trades_list(self, symbol, from_id=None, start_time=None, end_time=None, limit=500):
         """
         spot: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
         derv: https://binance-docs.github.io/apidocs/futures/en/#compressed-aggregate-trades-list
@@ -142,15 +118,14 @@ class Binance_public:
         end_point = '/api/v3/aggTrades' if self.market_type == 'spot' else '/fapi/v1/aggTrades'
         par = {
             'symbol': symbol.upper(),
-            'fromId': fromId,
-            'startTime': startTime,
-            'endTime': endTime,
+            'fromId': from_id,
+            'startTime': start_time,
+            'endTime': end_time,
             'limit': limit
         }
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
-    def get_kline(self, symbol_or_pair, interval, startTime=None, endTime=None, contractType='PERPETUAL', limit=500):
+    def get_kline(self, symbol_or_pair, interval, start_time=None, end_time=None, contract_type='PERPETUAL', limit=500):
         """
         spot: https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
         derv: https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
@@ -166,9 +141,9 @@ class Binance_public:
             mes_to_log = f'{def_name} Неизвестный kline_type {self.market_type}, lst_kline_type: {lst_kline_type}'
             self._logger.error(mes_to_log)
             raise TypeError(mes_to_log)
-        if contractType.upper() not in lst_contract_type:
+        if contract_type.upper() not in lst_contract_type:
             def_name = sys._getframe().f_code.co_name
-            mes_to_log = f'{def_name} Неизвестный contractType {contractType}, only {",".join(lst_contract_type)}'
+            mes_to_log = f'{def_name} Неизвестный contractType {contract_type}, only {",".join(lst_contract_type)}'
             self._logger.error(mes_to_log)
             raise TypeError(mes_to_log)
         if limit < 0 and ((self.market_type != 'spot' and abs(limit) < 1500) or (self.market_type == 'spot' and abs(limit) < 1000)):
@@ -198,18 +173,17 @@ class Binance_public:
             mes_to_log = f'{def_name} Неизвестный интервал {interval}, work_interval: {lst_work_interval}'
             self._logger.error(mes_to_log)
             raise TypeError(mes_to_log)
-        startTime, endTime = self.check_startTime_endTime(sys._getframe().f_code.co_name, startTime, endTime)
+        start_time, end_time = self.check_start_time_end_time(sys._getframe().f_code.co_name, start_time, end_time)
         par = {
             name_symbol_or_pair: symbol_or_pair.upper(),
             'interval': interval,
-            'startTime': startTime,
-            'endTime': endTime,
+            'startTime': start_time,
+            'endTime': end_time,
             'limit': limit
         }
         if self.market_type.lower() == 'contract':
-            par['contractType'] = contractType.upper()
+            par['contractType'] = contract_type.upper()
         return self._request_template(end_point=end_point, par=par, method='get')
-
 
     def get_current_average_price(self, symbol):
         """spot: https://binance-docs.github.io/apidocs/spot/en/#current-average-price"""
@@ -224,7 +198,6 @@ class Binance_public:
         }
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
     def get_mark_price_and_funding_rate(self, symbol=None):
         """
         derv: https://binance-docs.github.io/apidocs/futures/en/#mark-price
@@ -233,8 +206,7 @@ class Binance_public:
         par = {'symbol': symbol.upper()} if symbol else None
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
-    def get_funding_rate_history(self, symbol=None, startTime = None, endTime = None, limit=100):
+    def get_funding_rate_history(self, symbol=None, start_time=None, end_time=None, limit=100):
         """
         derv: https://binance-docs.github.io/apidocs/futures/en/#get-funding-rate-history
         """
@@ -244,16 +216,14 @@ class Binance_public:
             mes_to_log = f'{def_name} не корректный limit {limit}'
             self._logger.error(mes_to_log)
             raise TypeError(mes_to_log)
-        startTime, endTime = self.check_startTime_endTime(sys._getframe().f_code.co_name, startTime, endTime)
+        start_time, end_time = self.check_start_time_end_time(sys._getframe().f_code.co_name, start_time, end_time)
         par = {
             'symbol': symbol.upper() if symbol else symbol,
-            'startTime': startTime,
-            'endTime': endTime,
+            'startTime': start_time,
+            'endTime': end_time,
             'limit': limit
         }
         return self._request_template(end_point=end_point, par=par, method='get')
-
-
 
     def get_24hr_ticker_price_change(self, symbol=None, type_bin='FULL'):
         """
@@ -280,7 +250,6 @@ class Binance_public:
             par['type'] = type_bin.upper()
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
     def get_price_ticker(self, symbol=None):
         """
         spot: https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
@@ -299,7 +268,6 @@ class Binance_public:
             return None
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
     def get_symbol_order_book_ticker(self, symbol):
         """
         spot: https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
@@ -317,7 +285,6 @@ class Binance_public:
             self._logger.warning(mes_to_log)
             return None
         return self._request_template(end_point=end_point, par=par, method='get')
-
 
     def get_rolling_window_price_change_statistics(self, symbol_s, windowSize='1d', type_bin='MINI'):
         """https://binance-docs.github.io/apidocs/spot/en/#rolling-window-price-change-statistics"""
@@ -356,7 +323,6 @@ class Binance_public:
         par['windowSize'] = windowSize
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
     def get_open_interest(self, symbol):
         """
         https://binance-docs.github.io/apidocs/futures/en/#open-interest
@@ -367,8 +333,7 @@ class Binance_public:
         }
         return self._request_template(end_point=end_point, par=par, method='get')
 
-
-    def get_default_def_5_end_point(self, end_point, symbol, period, limit, startTime, endTime):
+    def get_default_def_5_end_point(self, end_point, symbol, period, limit, start_time, end_time):
         lst_period = ["5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"]
         if period not in lst_period:
             def_name = sys._getframe().f_code.co_name
@@ -380,11 +345,11 @@ class Binance_public:
             mes_to_log = f'{def_name} не корректный limit: {limit},  only: 30 - 500'
             self._logger.error(mes_to_log)
             raise TypeError(mes_to_log)
-        if startTime or endTime:
-            startTime, endTime = self.check_startTime_endTime(sys._getframe().f_code.co_name, startTime, endTime)
+        if start_time or end_time:
+            start_time, end_time = self.check_start_time_end_time(sys._getframe().f_code.co_name, start_time, end_time)
             time_now = int(datetime.timestamp(datetime.utcnow())*1000)
             time_30_days = 30*24*60*60*1000
-            if (time_now - startTime) > time_30_days:
+            if (time_now - start_time) > time_30_days:
                 def_name = sys._getframe().f_code.co_name
                 mes_to_log = f'{def_name} Only the data of the latest 30 days is available'
                 self._logger.error(mes_to_log)
@@ -392,42 +357,46 @@ class Binance_public:
         par = {
             'symbol': symbol.upper(),
             'period': period,
-            'startTime': startTime,
-            'endTime': endTime,
+            'startTime': start_time,
+            'endTime': end_time,
             'limit': limit
         }
         return self._request_template(end_point=end_point, par=par, method='get')
-    def get_open_interest_statistics(self, symbol, period, limit=30, startTime=None, endTime=None):
+
+    def get_open_interest_statistics(self, symbol, period, limit=30, start_time=None, end_time=None):
         """
         https://binance-docs.github.io/apidocs/futures/en/#open-interest-statistics
         """
         end_point = '/futures/data/openInterestHist'
-        return self.get_default_def_5_end_point(end_point, symbol, period, limit, startTime, endTime)
-    def get_top_trader_long_short_ratio_accounts(self, symbol, period, limit=30, startTime=None, endTime=None):
+        return self.get_default_def_5_end_point(end_point, symbol, period, limit, start_time, end_time)
+
+    def get_top_trader_long_short_ratio_accounts(self, symbol, period, limit=30, start_time=None, end_time=None):
         """
         https://binance-docs.github.io/apidocs/futures/en/#top-trader-long-short-ratio-accounts
         """
         end_point = '/futures/data/topLongShortAccountRatio'
-        return self.get_default_def_5_end_point(end_point, symbol, period, limit, startTime, endTime)
-    def get_top_trader_long_short_ratio_positions(self, symbol, period, limit=30, startTime=None, endTime=None):
+        return self.get_default_def_5_end_point(end_point, symbol, period, limit, start_time, end_time)
+
+    def get_top_trader_long_short_ratio_positions(self, symbol, period, limit=30, start_time=None, end_time=None):
         """
         https://binance-docs.github.io/apidocs/futures/en/#top-trader-long-short-ratio-positions
         """
         end_point = '/futures/data/topLongShortPositionRatio'
-        return self.get_default_def_5_end_point(end_point, symbol, period, limit, startTime, endTime)
-    def get_long_short_ratio(self, symbol, period, limit=30, startTime=None, endTime=None):
+        return self.get_default_def_5_end_point(end_point, symbol, period, limit, start_time, end_time)
+
+    def get_long_short_ratio(self, symbol, period, limit=30, start_time=None, end_time=None):
         """
         https://binance-docs.github.io/apidocs/futures/en/#long-short-ratio
         """
         end_point = '/futures/data/globalLongShortAccountRatio'
-        return self.get_default_def_5_end_point(end_point, symbol, period, limit, startTime, endTime)
-    def get_taker_buy_sell_volume(self, symbol, period, limit=30, startTime=None, endTime=None):
+        return self.get_default_def_5_end_point(end_point, symbol, period, limit, start_time, end_time)
+
+    def get_taker_buy_sell_volume(self, symbol, period, limit=30, start_time=None, end_time=None):
         """
         https://binance-docs.github.io/apidocs/futures/en/#taker-buy-sell-volume
         """
         end_point = '/futures/data/takerlongshortRatio'
-        return self.get_default_def_5_end_point(end_point, symbol, period, limit, startTime, endTime)
-
+        return self.get_default_def_5_end_point(end_point, symbol, period, limit, start_time, end_time)
 
     def get_composite_index_symbol_information(self, symbol=None):
         """
@@ -440,8 +409,7 @@ class Binance_public:
         return self._request_template(end_point=end_point, par=par, method='get')
 
 
-
-class Binance_websocket_public:
+class BinanceWebsocketPublic:
     _dict_urls = {
         'spot': 'wss://stream.binance.com:9443',
         'der': 'wss://fstream.binance.com',
@@ -468,7 +436,6 @@ class Binance_websocket_public:
     def __del__(self):
         self.websocket_app.close()
 
-
     def on_open(self, _wsapp):
         print("Connection opened")
         if self.stream == '/stream':
@@ -479,7 +446,8 @@ class Binance_websocket_public:
             }
             _wsapp.send(json.dumps(data))
 
-    def on_close(self, _wsapp, close_status_code, close_msg):
+    @staticmethod
+    def on_close(_wsapp, close_status_code, close_msg):
         if close_status_code is not None and close_msg is not None:
             print(f"Close connection by server, status {close_status_code}, close message {close_msg}")
 
@@ -489,7 +457,9 @@ class Binance_websocket_public:
         self._logger.error(mes_to_log)
         print(mes_to_log)
         raise TypeError(mes_to_log)
-    def on_ping(self, _wsapp, message):
+
+    @staticmethod
+    def on_ping(_wsapp, message):
         print(f"{str(datetime.now())} Got a ping! Ping msg is {message}")
 
     def stop(self):

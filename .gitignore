@@ -5,7 +5,7 @@ __pycache__/
 *$py.class
 
 update_pypi.txt
-
+debug.py
 # C extensions
 *.so
 

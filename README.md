@@ -1,11 +1,12 @@
 
 BINANCE
-По маркету все функции
-По вебсокетам - база
+public market: all
+public socket: base
 
 BYBIT
-По маркету часть
-По вебсокетам - база
+public market: base
+public socket: base
+private: wallet + history
 
 
 
