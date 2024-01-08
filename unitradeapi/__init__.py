@@ -1,3 +1,3 @@
 
-from .binance import BinanceWebsocketPublic, BinancePublic
-from .bybit import BybitPrivate, BybitPublic, BybitWebsocketPublic
+from .binance import SyncBinancePublic, SyncBinanceWebsocketPublic
+from .bybit import SyncBybitPublic, SyncBybitPrivate, SyncBybitWebsocketPublic, AsyncBybitPrivate
