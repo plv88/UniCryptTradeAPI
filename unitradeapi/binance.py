@@ -10,7 +10,7 @@ from PlvLogger import Logger
 # import _thread
 
 
-class BinancePublic:
+class SyncBinancePublic:
     _main_url_spot = r'https://api.binance.com'
     _main_url_derv = r'https://fapi.binance.com'
 
@@ -409,7 +409,7 @@ class BinancePublic:
         return self._request_template(end_point=end_point, par=par, method='get')
 
 
-class BinanceWebsocketPublic:
+class SyncBinanceWebsocketPublic:
     _dict_urls = {
         'spot': 'wss://stream.binance.com:9443',
         'der': 'wss://fstream.binance.com',

@@ -10,6 +10,7 @@ from PlvLogger import Logger
 import threading
 import hmac
 import hashlib
+import aiohttp
 # from queue import Queue
 
 
@@ -33,7 +34,7 @@ class GeneralBybit:
             return req.json()
 
 
-class BybitPublic(GeneralBybit):
+class SyncBybitPublic(GeneralBybit):
     def __init__(self, category):
         self.category = category
         self._logger = Logger('Bybit_public', type_log='w').logger
@@ -65,7 +66,7 @@ class BybitPublic(GeneralBybit):
         return None
 
 
-class BybitWebsocketPublic:
+class SyncBybitWebsocketPublic:
     _dict_urls = {
         'spot': 'wss://stream.bybit.com/v5/public/spot',
         'der': 'wss://stream.bybit.com/v5/public/linear',
@@ -141,7 +142,7 @@ class BybitWebsocketPublic:
         self.queue.put(parsed)
 
 
-class BybitPrivate(GeneralBybit):
+class SyncBybitPrivate(GeneralBybit):
     def __init__(self, category, api_key, api_secret):
         self.category = category
         self.api_key = api_key
@@ -190,15 +191,51 @@ class BybitPrivate(GeneralBybit):
         return self._request_template(end_point=end_point, method='get', par=params)
 
 
+class AsyncBybitPrivate:
+    def __init__(self, category, api_key, api_secret):
+        self.category = category
+        self.api_key = api_key
+        self.api_secret = api_secret
 
+    def __setattr__(self, key, value):
+        if key == 'category' and value not in ['spot', 'linear', 'option']:
+            raise TypeError(f"Неверный category {self.category}")
+        if key == 'category' and value == 'der':
+            value = 'linear'
+        object.__setattr__(self, key, value)
 
+    def create_signature(self, params):
+        query_string = '&'.join([f"{key}={value}" for key, value in sorted(params.items())])
+        return hmac.new(self.api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
 
+    @staticmethod
+    async def _request_template(end_point, method, par):
+        async with aiohttp.ClientSession() as session:
+            if method == 'get':
+                async with session.get(end_point, params=par) as response:
+                    return await response.json()
 
-# if __name__ == '__main__':
-#     queue_price = Queue()
-#     bybit_der = Bybit_public(category='linear').get_symbols_in_trading()
-#     bybit_spot = Bybit_public(category='spot').get_symbols_in_trading()
-#     work_topik_der = [f'tickers.{el}' for el in bybit_der]
-#     work_topik_spot = [f'tickers.{el}' for el in bybit_spot][:10]
-#     # Bybit_websocket_public('der', queue_price, work_topik_der).websocket_app.run_forever()
-#     Bybit_websocket_public('spot', queue_price, work_topik_spot).websocket_app.run_forever()
+    async def get_wallet_balance(self, account_type='UNIFIED', coin=None):
+        end_point = 'https://api.bybit.com/v5/account/wallet-balance'
+        params = {
+            'api_key': self.api_key,
+            'timestamp': str(int(time.time() * 1000)),
+            'accountType': account_type,
+        }
+        if coin: params['coin'] = coin
+        params['sign'] = self.create_signature(params)
+        return await self._request_template(end_point=end_point, method='get', par=params)
+
+    async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
+        end_point = 'https://api.bybit.com/v5/account/transaction-log'
+        params = {
+            'api_key': self.api_key,
+            'timestamp': str(int(time.time() * 1000)),
+            'accountType': account_type,
+            'category': self.category,
+            'limit': limit
+        }
+        if start_time: params['startTime'] = start_time
+        if end_time: params['endTime'] = end_time
+        params['sign'] = self.create_signature(params)
+        return await self._request_template(end_point=end_point, method='get', par=params)
