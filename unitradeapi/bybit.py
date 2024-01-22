@@ -1,4 +1,5 @@
 import requests
+import asyncio
 import sys
 # from datetime import datetime
 import json
@@ -11,33 +12,48 @@ import threading
 import hmac
 import hashlib
 import aiohttp
-# from queue import Queue
+
+
 
 
 class GeneralBybit:
     _main_url = r'https://api.bybit.com'
 
-    def _request_template(self, end_point, par=None, method='get'):
-        work_link = self._main_url
+    def _syns_request_template(self, end_point, par=None, method='get'):
+        def_name = sys._getframe().f_code.co_name
         match method.lower():
             case 'get':
-                req = requests.get(work_link + end_point, params=par)
+                req = requests.get(self._main_url + end_point, params=par)
             case 'post':
-                req = requests.post(work_link + end_point, params=par)
+                req = requests.post(self._main_url + end_point, params=par)
             case 'delete':
-                req = requests.delete(work_link + end_point, params=par)
+                req = requests.delete(self._main_url + end_point, params=par)
             case _:
-                def_name = sys._getframe().f_code.co_name
-                mes_to_log = f'{def_name} Неизвестный метод {method}'
-                raise TypeError(f"Неверный method {mes_to_log}")
-        if req.ok:
-            return req.json()
+                mes_to_log = f'{def_name} {end_point} Неизвестный метод {method}'
+                Logger('GeneralBybit', type_log='w').logger.error(mes_to_log)
+                raise mes_to_log
+        if not req.ok:
+            mes_to_log = f'{def_name} {end_point} response status != 200'
+            Logger(f'GeneralBybit', type_log='w').logger.error(mes_to_log)
+            raise mes_to_log
+        return req.json()
+
+    async def _async_request_template(self, end_point, method, par):
+        def_name = sys._getframe().f_code.co_name
+        async with aiohttp.ClientSession() as session:
+            if method == 'get':
+                async with session.get(self._main_url + end_point, params=par) as response:
+                    if response.status != 200:
+                        mes_to_log = f'{def_name} {end_point} response status != 200'
+                        Logger(f'GeneralBybit', type_log='w').logger.error(mes_to_log)
+                        raise mes_to_log
+                    return await response.json()
 
 
 class SyncBybitPublic(GeneralBybit):
     def __init__(self, category):
         self.category = category
-        self._logger = Logger('Bybit_public', type_log='w').logger
+        self._logger = Logger(f'SyncBybitPublic', type_log='w').logger
         self.headers = {}
 
     def __setattr__(self, key, value):
@@ -57,7 +73,8 @@ class SyncBybitPublic(GeneralBybit):
             'category': self.category,
             'status': 'Trading'
         }
-        return self._request_template(end_point=end_point, method='get', par=params)
+        return self._syns_request_template(end_point=end_point, method='get', par=params)
+
 
     def get_symbols_in_trading(self):
         result = self.get_instruments_info().get('result')
@@ -65,7 +82,176 @@ class SyncBybitPublic(GeneralBybit):
             return [el.get('symbol') for el in result.get('list') if el.get('status') == 'Trading']
         return None
 
+    def get_ticker(self, symbol):
+        """
+            https://bybit-exchange.github.io/docs/v5/market/tickers
+        """
+        end_point = '/v5/market/tickers'
+        params = {
+            'category': self.category,
+            'symbol': symbol
+        }
+        return self._syns_request_template(end_point=end_point, method='get', par=params)
 
+
+class AsyncBybitPublic(GeneralBybit):
+    def __init__(self, category):
+        self.category = category
+        self._logger = Logger('AsyncBybitPublic', type_log='w').logger
+        self.headers = {}
+
+    def __setattr__(self, key, value):
+        if key == 'category' and value not in ['spot', 'der', 'linear', 'inverse', 'option']:
+            self._logger.error(f'Неизвестный тип рынка {self.category}')
+            raise TypeError(f"Неверный category {self.category}")
+        if key == 'category' and value == 'der':
+            value = 'linear'
+        object.__setattr__(self, key, value)
+
+    async def get_instruments_info(self):
+        """
+        https://bybit-exchange.github.io/docs/v5/market/instrument
+        """
+        end_point = '/v5/market/instruments-info'
+        params = {
+            'category': self.category,
+            'status': 'Trading'
+        }
+        return await self._async_request_template(end_point=end_point, method='get', par=params)
+
+    async def get_ticker(self, symbol):
+        """
+            https://bybit-exchange.github.io/docs/v5/market/tickers
+        """
+        end_point = '/v5/market/tickers'
+        params = {
+            'category': self.category,
+            'symbol': symbol
+        }
+        return await self._async_request_template(end_point=end_point, method='get', par=params)
+
+    async def get_dict_tickers(self, lst_symbol):
+        dict_res = {}
+        tasks = [asyncio.create_task(self.get_ticker(symbol)) for symbol in lst_symbol]
+        result = await asyncio.gather(*tasks)
+        for coin in result:
+            if coin.get('retMsg') == 'OK':
+                dict_res[coin['result']['list'][0]['symbol']] = coin['result']['list'][0]['lastPrice']
+            else:
+                def_name = sys._getframe().f_code.co_name
+                mes_to_log = f'{def_name} Ошибка запроса coin.get(retMsg) != OK {coin}'
+                self._logger.error(mes_to_log)
+                raise mes_to_log
+        return dict_res
+
+
+class SyncBybitPrivate(GeneralBybit):
+    def __init__(self, category, api_key, api_secret):
+        self._logger = Logger('SyncBybitPrivate', type_log='w').logger
+        self.category = category
+        self.api_key = api_key
+        self.api_secret = api_secret
+
+    def __setattr__(self, key, value):
+        if key == 'category' and value not in ['spot', 'linear', 'option']:
+            raise TypeError(f"Неверный category {self.category}")
+        if key == 'category' and value == 'der':
+            value = 'linear'
+        object.__setattr__(self, key, value)
+
+    def __create_signature(self, params):
+        query_string = '&'.join([f"{key}={value}" for key, value in sorted(params.items())])
+        return hmac.new(self.api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+
+    def get_wallet_balance(self, account_type='UNIFIED', coin=None):
+        """
+            https://bybit-exchange.github.io/docs/v5/account/wallet-balance
+        """
+        end_point = '/v5/account/wallet-balance'
+        params = {
+            'api_key': self.api_key,
+            'timestamp': str(int(time.time() * 1000)),
+            'accountType': account_type,
+        }
+        if coin:
+            params['coin'] = coin
+        params['sign'] = self.__create_signature(params)
+        return self._syns_request_template(end_point=end_point, method='get', par=params)
+
+    def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
+        """
+           https://bybit-exchange.github.io/docs/v5/account/transaction-log
+        """
+        end_point = '/v5/account/transaction-log'
+        params = {
+            'api_key': self.api_key,
+            'timestamp': str(int(time.time() * 1000)),
+            'accountType': account_type,
+            'category': self.category,
+            'limit': limit
+        }
+        if start_time:
+            params['startTime'] = start_time
+        if end_time:
+            params['endTime'] = end_time
+        params['sign'] = self.__create_signature(params)
+        return self._syns_request_template(end_point=end_point, method='get', par=params)
+
+
+class AsyncBybitPrivate(GeneralBybit):
+    def __init__(self, category, api_key, api_secret):
+        self._logger = Logger('AsyncBybitPrivate', type_log='w').logger
+        self.category = category
+        self.api_key = api_key
+        self.api_secret = api_secret
+
+    def __setattr__(self, key, value):
+        if key == 'category' and value not in ['spot', 'linear', 'option']:
+            raise TypeError(f"Неверный category {self.category}")
+        if key == 'category' and value == 'der':
+            value = 'linear'
+        object.__setattr__(self, key, value)
+
+    def __create_signature(self, params):
+        query_string = '&'.join([f"{key}={value}" for key, value in sorted(params.items())])
+        return hmac.new(self.api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+
+    async def get_wallet_balance(self, account_type='UNIFIED', coin=None):
+        """
+            https://bybit-exchange.github.io/docs/v5/account/wallet-balance
+        """
+        end_point = '/v5/account/wallet-balance'
+        params = {
+            'api_key': self.api_key,
+            'timestamp': str(int(time.time() * 1000)),
+            'accountType': account_type,
+        }
+        if coin:
+            params['coin'] = coin
+        params['sign'] = self.__create_signature(params)
+        return await self._async_request_template(end_point=end_point, method='get', par=params)
+
+    async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
+        """
+            https://bybit-exchange.github.io/docs/v5/account/transaction-log
+        """
+        end_point = '/v5/account/transaction-log'
+        params = {
+            'api_key': self.api_key,
+            'timestamp': str(int(time.time() * 1000)),
+            'accountType': account_type,
+            'category': self.category,
+            'limit': limit
+        }
+        if start_time:
+            params['startTime'] = start_time
+        if end_time:
+            params['endTime'] = end_time
+        params['sign'] = self.__create_signature(params)
+        return await self._async_request_template(end_point=end_point, method='get', par=params)
+
+
+#Websockets
 class SyncBybitWebsocketPublic:
     _dict_urls = {
         'spot': 'wss://stream.bybit.com/v5/public/spot',
@@ -78,7 +264,7 @@ class SyncBybitWebsocketPublic:
         if trade_type not in self._dict_urls:
             raise ValueError(f"trade_type '{trade_type}' is not valid.")
         self.trade_type = trade_type
-        self._logger = Logger('Bybit_websocket_public', type_log='w').logger
+        self._logger = Logger('SyncBybitWebsocketPublic', type_log='w').logger
         self.queue = queue
         self.topics = topics
         self.websocket_app = websocket.WebSocketApp(
@@ -141,101 +327,3 @@ class SyncBybitWebsocketPublic:
         # print(len(parsed), parsed)
         self.queue.put(parsed)
 
-
-class SyncBybitPrivate(GeneralBybit):
-    def __init__(self, category, api_key, api_secret):
-        self.category = category
-        self.api_key = api_key
-        self.api_secret = api_secret
-
-    def __setattr__(self, key, value):
-        if key == 'category' and value not in ['spot', 'linear', 'option']:
-            raise TypeError(f"Неверный category {self.category}")
-        if key == 'category' and value == 'der':
-            value = 'linear'
-        object.__setattr__(self, key, value)
-
-    def create_signature(self, params):
-        query_string = '&'.join([f"{key}={value}" for key, value in sorted(params.items())])
-        return hmac.new(self.api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
-
-    def get_wallet_balance(self, account_type='UNIFIED', coin=None):
-        """
-        https://bybit-exchange.github.io/docs/v5/account/wallet-balance
-        """
-        end_point = '/v5/account/wallet-balance'
-        params = {
-            'api_key': self.api_key,
-            'timestamp': str(int(time.time() * 1000)),
-            'accountType': account_type,
-        }
-        if coin: params['coin'] = coin
-        params['sign'] = self.create_signature(params)
-        return self._request_template(end_point=end_point, method='get', par=params)
-
-    def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
-        """
-        https://bybit-exchange.github.io/docs/v5/account/transaction-log
-        """
-        end_point = '/v5/account/transaction-log'
-        params = {
-            'api_key': self.api_key,
-            'timestamp': str(int(time.time() * 1000)),
-            'accountType': account_type,
-            'category': self.category,
-            'limit': limit
-        }
-        if start_time: params['startTime'] = start_time
-        if end_time: params['endTime'] = end_time
-        params['sign'] = self.create_signature(params)
-        return self._request_template(end_point=end_point, method='get', par=params)
-
-
-class AsyncBybitPrivate:
-    def __init__(self, category, api_key, api_secret):
-        self.category = category
-        self.api_key = api_key
-        self.api_secret = api_secret
-
-    def __setattr__(self, key, value):
-        if key == 'category' and value not in ['spot', 'linear', 'option']:
-            raise TypeError(f"Неверный category {self.category}")
-        if key == 'category' and value == 'der':
-            value = 'linear'
-        object.__setattr__(self, key, value)
-
-    def create_signature(self, params):
-        query_string = '&'.join([f"{key}={value}" for key, value in sorted(params.items())])
-        return hmac.new(self.api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
-
-    @staticmethod
-    async def _request_template(end_point, method, par):
-        async with aiohttp.ClientSession() as session:
-            if method == 'get':
-                async with session.get(end_point, params=par) as response:
-                    return await response.json()
-
-    async def get_wallet_balance(self, account_type='UNIFIED', coin=None):
-        end_point = 'https://api.bybit.com/v5/account/wallet-balance'
-        params = {
-            'api_key': self.api_key,
-            'timestamp': str(int(time.time() * 1000)),
-            'accountType': account_type,
-        }
-        if coin: params['coin'] = coin
-        params['sign'] = self.create_signature(params)
-        return await self._request_template(end_point=end_point, method='get', par=params)
-
-    async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
-        end_point = 'https://api.bybit.com/v5/account/transaction-log'
-        params = {
-            'api_key': self.api_key,
-            'timestamp': str(int(time.time() * 1000)),
-            'accountType': account_type,
-            'category': self.category,
-            'limit': limit
-        }
-        if start_time: params['startTime'] = start_time
-        if end_time: params['endTime'] = end_time
-        params['sign'] = self.create_signature(params)
-        return await self._request_template(end_point=end_point, method='get', par=params)
