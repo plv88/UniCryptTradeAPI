@@ -131,10 +131,21 @@ class AsyncBybitPublic(GeneralBybit):
         return await self._async_request_template(end_point=end_point, method='get', par=params)
 
     async def get_dict_tickers(self, lst_symbol):
+        def_name = sys._getframe().f_code.co_name
+        all_results = []
+        for i in range(0, len(lst_symbol), 10):
+            tasks = [asyncio.create_task(self.get_ticker(symbol)) for symbol in lst_symbol[i:i + 10]]
+            try:
+                done, _ = await asyncio.wait_for(asyncio.wait(tasks), 5)
+                results = [task.result() for task in done if task.done()]
+                all_results.extend(results)
+            except asyncio.TimeoutError:
+                mes_to_log = f"{def_name} Timeout for batch starting at index {i}"
+                self._logger.error(mes_to_log)
+                print(mes_to_log)
+                raise mes_to_log
         dict_res = {}
-        tasks = [asyncio.create_task(self.get_ticker(symbol)) for symbol in lst_symbol]
-        result = await asyncio.gather(*tasks)
-        for coin in result:
+        for coin in all_results:
             if coin.get('retMsg') == 'OK':
                 dict_res[coin['result']['list'][0]['symbol']] = coin['result']['list'][0]['lastPrice']
             else:
@@ -326,4 +337,3 @@ class SyncBybitWebsocketPublic:
         parsed['trade_type'] = self.trade_type
         # print(len(parsed), parsed)
         self.queue.put(parsed)
-
