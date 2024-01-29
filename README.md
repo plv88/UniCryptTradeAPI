@@ -30,7 +30,7 @@ exchange_info = binance_client.get_exchange_information()
 order_book = bybit_client.get_order_book(symbol='BTCUSD')
 ```
 
-Main methods from Bybit
+## Main methods from Bybit
 SyncBybitPublic:
 - instrument
 - symbols_in_trading
