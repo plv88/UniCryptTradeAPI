@@ -43,11 +43,15 @@ class GeneralBybit:
         async with aiohttp.ClientSession() as session:
             if method == 'get':
                 async with session.get(self._main_url + end_point, params=par) as response:
-                    if response.status != 200:
-                        mes_to_log = f'{def_name} {end_point} response status != 200'
-                        Logger(f'GeneralBybit', type_log='w').logger.error(mes_to_log)
-                        raise mes_to_log
-                    return await response.json()
+                    result = await response.json()
+                    if isinstance(result, dict):
+                        if result.get('retMsg') == 'OK':
+                            if result.get('result'):
+                                return result.get('result')
+                            return result
+                    mes_to_log = f'{def_name} {end_point} status: {result}'
+                    Logger(f'GeneralBybit', type_log='w').logger.warning(mes_to_log)
+                    return None
 
 
 class SyncBybitPublic(GeneralBybit):
@@ -226,6 +230,18 @@ class AsyncBybitPrivate(GeneralBybit):
     def __create_signature(self, params):
         query_string = '&'.join([f"{key}={value}" for key, value in sorted(params.items())])
         return hmac.new(self.api_secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+
+    async def get_account_info(self):
+        """
+            https://bybit-exchange.github.io/docs/v5/account/account-info
+        """
+        end_point = '/v5/account/info'
+        params = {
+            'api_key': self.api_key,
+            'timestamp': str(int(time.time() * 1000)),
+        }
+        params['sign'] = self.__create_signature(params)
+        return await self._async_request_template(end_point=end_point, method='get', par=params)
 
     async def get_wallet_balance(self, account_type='UNIFIED', coin=None):
         """
