@@ -260,62 +260,41 @@ class AsyncBybitPrivate(GeneralBybit):
         params['sign'] = self.__create_signature(params)
         return await self._async_request_template(end_point=end_point, method='get', par=params)
 
-    # async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
-    #     """
-    #         https://bybit-exchange.github.io/docs/v5/account/transaction-log
-    #     """
-    #     end_point = '/v5/account/transaction-log'
-    #     params = {
-    #         'api_key': self.api_key,
-    #         'timestamp': str(int(time.time() * 1000)),
-    #         'accountType': account_type,
-    #         'category': self.category,
-    #         'limit': limit
-    #     }
-    #     if start_time:
-    #         params['startTime'] = start_time
-    #     if end_time:
-    #         params['endTime'] = end_time
-    #     params['sign'] = self.__create_signature(params)
-    #     return await self._async_request_template(end_point=end_point, method='get', par=params)
-
-    async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', category=None, limit=50):
+    async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=50):
         """
         https://bybit-exchange.github.io/docs/v5/account/transaction-log
         Получение лога транзакций с поддержкой пагинации.
         """
         end_point = '/v5/account/transaction-log'
-        params = {
-            'api_key': self.api_key,
-            'timestamp': str(int(time.time() * 1000)),
-            'accountType': account_type,
-            'limit': limit
-        }
-
-        # Добавление дополнительных параметров, если они указаны
-        if start_time:
-            params['startTime'] = start_time
-        if end_time:
-            params['endTime'] = end_time
-        if category:
-            params['category'] = category
-
         all_logs = []  # Список для сбора всех логов
         cursor = None  # Инициализация курсора для пагинации
 
         # Цикл для обработки пагинации
         while True:
+            params = {
+                'api_key': self.api_key,
+                'timestamp': str(int(time.time() * 1000)),  # Генерируем новый timestamp для каждого запроса
+                'accountType': account_type,
+                'category': self.category,
+                'limit': limit
+            }
+
+            if start_time:
+                params['startTime'] = start_time
+            if end_time:
+                params['endTime'] = end_time
             if cursor:
                 params['cursor'] = cursor
-            params['sign'] = self.__create_signature(params)  # Подпись запроса
+
+            params['sign'] = self.__create_signature(params)  # Генерируем новую подпись для каждого запроса
+
             response = await self._async_request_template(end_point=end_point, method='get', par=params)
-            data = response.json()  # Предполагаем, что ответ приходит в формате JSON
-
+            if response is None:
+                break
             # Добавляем полученные логи в общий список
-            all_logs.extend(data.get('list', []))
-
+            all_logs.extend(response.get('list', []))
             # Обновляем курсор для следующего запроса
-            cursor = data.get('nextPageCursor')
+            cursor = response.get('nextPageCursor')
             if not cursor:
                 break  # Выход из цикла, если больше нет страниц для загрузки
 
