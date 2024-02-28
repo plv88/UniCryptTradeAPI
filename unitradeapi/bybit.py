@@ -150,11 +150,11 @@ class AsyncBybitPublic(GeneralBybit):
                 raise mes_to_log
         dict_res = {}
         for coin in all_results:
-            if coin.get('retMsg') == 'OK':
-                dict_res[coin['result']['list'][0]['symbol']] = coin['result']['list'][0]['lastPrice']
+            if coin.get('list'):
+                dict_res[coin['list'][0]['symbol']] = coin['list'][0]['lastPrice']
             else:
                 def_name = sys._getframe().f_code.co_name
-                mes_to_log = f'{def_name} Ошибка запроса coin.get(retMsg) != OK {coin}'
+                mes_to_log = f'{def_name} Ошибка запроса {coin}'
                 self._logger.error(mes_to_log)
                 raise mes_to_log
         return dict_res
@@ -213,6 +213,8 @@ class SyncBybitPrivate(GeneralBybit):
         return self._syns_request_template(end_point=end_point, method='get', par=params)
 
 
+
+
 class AsyncBybitPrivate(GeneralBybit):
     def __init__(self, category, api_key, api_secret):
         self._logger = Logger('AsyncBybitPrivate', type_log='w').logger
@@ -258,24 +260,66 @@ class AsyncBybitPrivate(GeneralBybit):
         params['sign'] = self.__create_signature(params)
         return await self._async_request_template(end_point=end_point, method='get', par=params)
 
-    async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
+    # async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', limit=20):
+    #     """
+    #         https://bybit-exchange.github.io/docs/v5/account/transaction-log
+    #     """
+    #     end_point = '/v5/account/transaction-log'
+    #     params = {
+    #         'api_key': self.api_key,
+    #         'timestamp': str(int(time.time() * 1000)),
+    #         'accountType': account_type,
+    #         'category': self.category,
+    #         'limit': limit
+    #     }
+    #     if start_time:
+    #         params['startTime'] = start_time
+    #     if end_time:
+    #         params['endTime'] = end_time
+    #     params['sign'] = self.__create_signature(params)
+    #     return await self._async_request_template(end_point=end_point, method='get', par=params)
+
+    async def get_transaction_log(self, start_time=None, end_time=None, account_type='UNIFIED', category=None, limit=50):
         """
-            https://bybit-exchange.github.io/docs/v5/account/transaction-log
+        https://bybit-exchange.github.io/docs/v5/account/transaction-log
+        Получение лога транзакций с поддержкой пагинации.
         """
         end_point = '/v5/account/transaction-log'
         params = {
             'api_key': self.api_key,
             'timestamp': str(int(time.time() * 1000)),
             'accountType': account_type,
-            'category': self.category,
             'limit': limit
         }
+
+        # Добавление дополнительных параметров, если они указаны
         if start_time:
             params['startTime'] = start_time
         if end_time:
             params['endTime'] = end_time
-        params['sign'] = self.__create_signature(params)
-        return await self._async_request_template(end_point=end_point, method='get', par=params)
+        if category:
+            params['category'] = category
+
+        all_logs = []  # Список для сбора всех логов
+        cursor = None  # Инициализация курсора для пагинации
+
+        # Цикл для обработки пагинации
+        while True:
+            if cursor:
+                params['cursor'] = cursor
+            params['sign'] = self.__create_signature(params)  # Подпись запроса
+            response = await self._async_request_template(end_point=end_point, method='get', par=params)
+            data = response.json()  # Предполагаем, что ответ приходит в формате JSON
+
+            # Добавляем полученные логи в общий список
+            all_logs.extend(data.get('list', []))
+
+            # Обновляем курсор для следующего запроса
+            cursor = data.get('nextPageCursor')
+            if not cursor:
+                break  # Выход из цикла, если больше нет страниц для загрузки
+
+        return all_logs
 
 
 #Websockets

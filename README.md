@@ -19,7 +19,9 @@ pip install UniCryptTradeAPI
 ```
 
 ```commandline
-from UniCryptTradeAPI import SyncBinancePublic, SyncBybitPublic
+from UniCryptTradeAPI import SyncBinancePublic
+from UniCryptTradeAPI import SyncBybitPublic
+```
 
 # Initialize clients
 binance_client = SyncBinancePublic(market_type='spot')
