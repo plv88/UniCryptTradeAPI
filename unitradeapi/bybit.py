@@ -297,7 +297,6 @@ class AsyncBybitPrivate(GeneralBybit):
             cursor = response.get('nextPageCursor')
             if not cursor:
                 break  # Выход из цикла, если больше нет страниц для загрузки
-
         return all_logs
 
 
