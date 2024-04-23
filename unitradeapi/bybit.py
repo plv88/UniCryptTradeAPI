@@ -334,11 +334,15 @@ class SyncBybitWebsocketPublic:
                 if _wsapp.sock and _wsapp.sock.connected:  # Проверьте, что сокет существует и соединение открыто
                     _wsapp.send(json.dumps({"req_id": "100001", "op": "ping"}))
                 else:
-                    print("WebSocket is not connected.")
+                    msg = "send_heartbeat, WebSocket is not connected."
+                    self._logger.warning(msg)
+                    print(msg)
                     break  # Выход из цикла, если соединение закрыто
                 time.sleep(20)
             except websocket.WebSocketConnectionClosedException:
-                print("WebSocket connection is closed, stopping heartbeat.")
+                msg = "WebSocket connection is closed, stopping heartbeat."
+                self._logger.warning(msg)
+                print(msg)
                 break
 
     def on_open(self, _wsapp):
