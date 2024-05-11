@@ -296,6 +296,132 @@ class AsyncBybitPrivate(GeneralBybit):
 
 
 # Websockets
+# class SyncBybitWebsocketPublic:
+#     _dict_urls = {
+#         'spot': 'wss://stream.bybit.com/v5/public/spot',
+#         'der': 'wss://stream.bybit.com/v5/public/linear',
+#         'der_auth': 'wss://stream.bybit.com/v5/private',
+#         'spot_auth': 'wss://stream.bybit.com/v5/private'
+#     }
+#
+#     def __init__(self, trade_type, queue, topics):
+#         if trade_type not in self._dict_urls:
+#             raise ValueError(f"trade_type '{trade_type}' is not valid.")
+#         self.trade_type = trade_type
+#         self._logger = Logger('SyncBybitWebsocketPublic', type_log='w').logger
+#         self.queue = queue
+#         self.topics = topics
+#         self.websocket_app = None
+#         self.heartbeat_thread = None
+#         self.websocket_thread = None
+#         self._is_running = True
+#         self.reconnect_delay = 20  # Задержка перед повторным подключением
+#         self.count_reconnect = 0
+#
+#         self.connect()
+#
+#     def connect(self):
+#         self._is_running = True
+#         print('connect')
+#         self.websocket_app = websocket.WebSocketApp(
+#             url=self._dict_urls.get(self.trade_type),
+#             on_message=self.on_message,
+#             on_close=self.on_close,
+#             on_error=self.on_error,
+#             on_open=self.on_open,
+#         )
+#         self.websocket_thread = threading.Thread(target=self.websocket_app.run_forever)
+#         self.websocket_thread.daemon = True
+#         self.websocket_thread.start()
+#
+#     def __del__(self):
+#         self.stop()
+#
+#     def send_heartbeat(self, _wsapp):
+#         while self._is_running:  # Проверьте, что соединение должно быть открыто
+#             try:
+#                 if _wsapp.sock and _wsapp.sock.connected:  # Проверьте, что сокет существует и соединение открыто
+#                     _wsapp.send(json.dumps({"req_id": "100001", "op": "ping"}))
+#                 else:
+#                     msg = "send_heartbeat, WebSocket is not connected."
+#                     self._logger.warning(msg)
+#                     print(msg)
+#                     break  # Выход из цикла, если соединение закрыто
+#                 time.sleep(20)
+#             except websocket.WebSocketConnectionClosedException:
+#                 msg = "WebSocket connection is closed, stopping heartbeat."
+#                 self._logger.warning(msg)
+#                 print(msg)
+#                 break
+#
+#     def on_open(self, _wsapp):
+#         print("Connection opened")
+#         self.heartbeat_thread = threading.Thread(target=self.send_heartbeat, args=(_wsapp,))
+#         self.heartbeat_thread.daemon = True
+#         self.heartbeat_thread.start()
+#         data = {
+#             "op": "subscribe",
+#             "args": self.topics
+#         }
+#         _wsapp.send(json.dumps(data))
+#
+#     @staticmethod
+#     def on_close(_wsapp, close_status_code, close_msg):
+#         if close_status_code is not None and close_msg is not None:
+#             print(f"Close connection by server, status {close_status_code}, close message {close_msg}")
+#
+#     def on_error(self, _wsapp, error):
+#         def_name = sys._getframe().f_code.co_name
+#         mes_to_log = f'{def_name} Error: {error}'
+#         # mes_to_log = f'{def_name} Error: {error}, traceback: {traceback.format_exc()}'
+#         self._logger.error(mes_to_log)
+#         print(mes_to_log)
+#         if self.count_reconnect <= 3:
+#             self.count_reconnect += 1
+#             self.reconnect()
+#         else:
+#             # self.queue.put('exit')
+#             exit()
+#
+#     def reconnect(self):
+#         if self._is_running:
+#             mes_to_log = f'SyncBybitWebsocketPublic Reconnect {self.count_reconnect}'
+#             self._logger.warning(mes_to_log)
+#             print(mes_to_log)
+#             time.sleep(self.reconnect_delay)
+#             self.stop()
+#             self.connect()
+#         else:
+#             mes_to_log = f'reconnect not self._is_running'
+#             self._logger.error(mes_to_log)
+#             raise mes_to_log
+#
+#
+#     def stop(self):
+#         self._is_running = False
+#         if self.websocket_app:
+#             self.websocket_app.close()
+#         if self.heartbeat_thread or hasattr(self, 'heartbeat_thread'):
+#             self.heartbeat_thread.join()
+#         if self.websocket_thread:
+#             self.websocket_thread.join()
+#
+#     def on_message(self, _wsapp, message):
+#         parsed = json.loads(message)
+#         parsed['trade_type'] = self.trade_type
+#         print(len(parsed), parsed)
+#         self.queue.put(parsed)
+
+# import json
+# import time
+# import threading
+# import websocket
+# import sys
+# import traceback
+# from logging import Logger
+from queue import Queue
+
+
 class SyncBybitWebsocketPublic:
     _dict_urls = {
         'spot': 'wss://stream.bybit.com/v5/public/spot',
@@ -313,15 +439,16 @@ class SyncBybitWebsocketPublic:
         self.topics = topics
         self.websocket_app = None
         self.heartbeat_thread = None
-        self._is_running = None
+        self.websocket_thread = None
+        self._is_running = True
         self.reconnect_delay = 20  # Задержка перед повторным подключением
         self.count_reconnect = 0
 
-        self.connect()
+        # self.connect()
 
     def connect(self):
         self._is_running = True
-        print('connect')
+        print('Connecting...')
         self.websocket_app = websocket.WebSocketApp(
             url=self._dict_urls.get(self.trade_type),
             on_message=self.on_message,
@@ -329,21 +456,23 @@ class SyncBybitWebsocketPublic:
             on_error=self.on_error,
             on_open=self.on_open,
         )
-        self.websocket_app.run_forever()
+        self.websocket_thread = threading.Thread(target=self.websocket_app.run_forever)
+        self.websocket_thread.daemon = True
+        self.websocket_thread.start()
 
     def __del__(self):
         self.stop()
 
     def send_heartbeat(self, _wsapp):
-        while self._is_running:  # Проверьте, что соединение должно быть открыто
+        while self._is_running:
             try:
-                if _wsapp.sock and _wsapp.sock.connected:  # Проверьте, что сокет существует и соединение открыто
+                if _wsapp.sock and _wsapp.sock.connected:
                     _wsapp.send(json.dumps({"req_id": "100001", "op": "ping"}))
                 else:
                     msg = "send_heartbeat, WebSocket is not connected."
                     self._logger.warning(msg)
                     print(msg)
-                    break  # Выход из цикла, если соединение закрыто
+                    break
                 time.sleep(20)
             except websocket.WebSocketConnectionClosedException:
                 msg = "WebSocket connection is closed, stopping heartbeat."
@@ -370,14 +499,13 @@ class SyncBybitWebsocketPublic:
     def on_error(self, _wsapp, error):
         def_name = sys._getframe().f_code.co_name
         mes_to_log = f'{def_name} Error: {error}'
-        # mes_to_log = f'{def_name} Error: {error}, traceback: {traceback.format_exc()}'
         self._logger.error(mes_to_log)
         print(mes_to_log)
         if self.count_reconnect <= 3:
             self.count_reconnect += 1
             self.reconnect()
         else:
-            # self.queue.put('exit')
+            self.queue.put('exit')
             exit()
 
     def reconnect(self):
@@ -388,21 +516,21 @@ class SyncBybitWebsocketPublic:
             time.sleep(self.reconnect_delay)
             self.stop()
             self.connect()
-        else:
-            mes_to_log = f'reconnect not self._is_running'
-            self._logger.error(mes_to_log)
-            raise mes_to_log
-
 
     def stop(self):
         self._is_running = False
         if self.websocket_app:
             self.websocket_app.close()
-        if self.heartbeat_thread or hasattr(self, 'heartbeat_thread'):
+        if self.heartbeat_thread:
             self.heartbeat_thread.join()
+        if self.websocket_thread:
+            self.websocket_thread.join()
 
     def on_message(self, _wsapp, message):
         parsed = json.loads(message)
         parsed['trade_type'] = self.trade_type
-        print(len(parsed), parsed)
+        # print(len(parsed), parsed)
         self.queue.put(parsed)
+
+# Пример использования:
+
