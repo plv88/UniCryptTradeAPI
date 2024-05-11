@@ -377,7 +377,7 @@ class SyncBybitWebsocketPublic:
             self.count_reconnect += 1
             self.reconnect()
         else:
-            self.queue.put('exit')
+            # self.queue.put('exit')
             exit()
 
     def reconnect(self):
