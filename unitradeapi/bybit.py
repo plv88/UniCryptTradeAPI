@@ -14,8 +14,6 @@ import hashlib
 import aiohttp
 
 
-
-
 class GeneralBybit:
     _main_url = r'https://api.bybit.com'
 
@@ -78,7 +76,6 @@ class SyncBybitPublic(GeneralBybit):
             'status': 'Trading'
         }
         return self._syns_request_template(end_point=end_point, method='get', par=params)
-
 
     def get_symbols_in_trading(self):
         result = self.get_instruments_info().get('result')
@@ -213,8 +210,6 @@ class SyncBybitPrivate(GeneralBybit):
         return self._syns_request_template(end_point=end_point, method='get', par=params)
 
 
-
-
 class AsyncBybitPrivate(GeneralBybit):
     def __init__(self, category, api_key, api_secret):
         self._logger = Logger('AsyncBybitPrivate', type_log='w').logger
@@ -300,7 +295,7 @@ class AsyncBybitPrivate(GeneralBybit):
         return all_logs
 
 
-#Websockets
+# Websockets
 class SyncBybitWebsocketPublic:
     _dict_urls = {
         'spot': 'wss://stream.bybit.com/v5/public/spot',
@@ -316,14 +311,25 @@ class SyncBybitWebsocketPublic:
         self._logger = Logger('SyncBybitWebsocketPublic', type_log='w').logger
         self.queue = queue
         self.topics = topics
+        self.websocket_app = None
+        self.heartbeat_thread = None
+        self._is_running = None
+        self.reconnect_delay = 20  # Задержка перед повторным подключением
+        self.count_reconnect = 0
+
+        self.connect()
+
+    def connect(self):
+        self._is_running = True
+        print('connect')
         self.websocket_app = websocket.WebSocketApp(
-            url=self._dict_urls.get(trade_type),
+            url=self._dict_urls.get(self.trade_type),
             on_message=self.on_message,
             on_close=self.on_close,
             on_error=self.on_error,
             on_open=self.on_open,
         )
-        self._is_running = True
+        self.websocket_app.run_forever()
 
     def __del__(self):
         self.stop()
@@ -347,8 +353,9 @@ class SyncBybitWebsocketPublic:
 
     def on_open(self, _wsapp):
         print("Connection opened")
-        heartbeat_thread = threading.Thread(target=self.send_heartbeat, args=(_wsapp,))
-        heartbeat_thread.start()
+        self.heartbeat_thread = threading.Thread(target=self.send_heartbeat, args=(_wsapp,))
+        self.heartbeat_thread.daemon = True
+        self.heartbeat_thread.start()
         data = {
             "op": "subscribe",
             "args": self.topics
@@ -362,20 +369,40 @@ class SyncBybitWebsocketPublic:
 
     def on_error(self, _wsapp, error):
         def_name = sys._getframe().f_code.co_name
-        mes_to_log = f'{def_name} Error: {error}, traceback: {traceback.format_exc()}'
+        mes_to_log = f'{def_name} Error: {error}'
+        # mes_to_log = f'{def_name} Error: {error}, traceback: {traceback.format_exc()}'
         self._logger.error(mes_to_log)
         print(mes_to_log)
-        raise TypeError(mes_to_log)
+        if self.count_reconnect <= 3:
+            self.count_reconnect += 1
+            self.reconnect()
+        else:
+            self.queue.put('exit')
+            exit()
+
+    def reconnect(self):
+        if self._is_running:
+            mes_to_log = f'SyncBybitWebsocketPublic Reconnect {self.count_reconnect}'
+            self._logger.warning(mes_to_log)
+            print(mes_to_log)
+            time.sleep(self.reconnect_delay)
+            self.stop()
+            self.connect()
+        else:
+            mes_to_log = f'reconnect not self._is_running'
+            self._logger.error(mes_to_log)
+            raise mes_to_log
+
 
     def stop(self):
-        self._is_running = False  # Установите флаг в False, чтобы остановить пинг
+        self._is_running = False
         if self.websocket_app:
             self.websocket_app.close()
-        if hasattr(self, 'heartbeat_thread'):
-            self.heartbeat_thread.join()  # Дождитесь завершения потока пинга
+        if self.heartbeat_thread or hasattr(self, 'heartbeat_thread'):
+            self.heartbeat_thread.join()
 
     def on_message(self, _wsapp, message):
         parsed = json.loads(message)
         parsed['trade_type'] = self.trade_type
-        # print(len(parsed), parsed)
+        print(len(parsed), parsed)
         self.queue.put(parsed)
