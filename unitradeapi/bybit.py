@@ -440,7 +440,7 @@ class SyncBybitWebsocketPublic:
         self.websocket_app = None
         self.heartbeat_thread = None
         self.websocket_thread = None
-        self._is_running = True
+        self._is_running = False
         self.reconnect_delay = 20  # Задержка перед повторным подключением
         self.count_reconnect = 0
 
@@ -456,9 +456,10 @@ class SyncBybitWebsocketPublic:
             on_error=self.on_error,
             on_open=self.on_open,
         )
-        self.websocket_thread = threading.Thread(target=self.websocket_app.run_forever)
-        self.websocket_thread.daemon = True
-        self.websocket_thread.start()
+        self.websocket_app.run_forever()
+        # self.websocket_thread = threading.Thread(target=self.websocket_app.run_forever)
+        # self.websocket_thread.daemon = True
+        # self.websocket_thread.start()
 
     def __del__(self):
         self.stop()

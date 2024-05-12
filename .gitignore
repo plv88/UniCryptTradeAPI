@@ -8,6 +8,7 @@ update_pypi.txt
 debug.py
 # C extensions
 *.so
+download.txt
 
 # Distribution / packaging
 .Python
